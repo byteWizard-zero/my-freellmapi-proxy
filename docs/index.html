@@ -261,6 +261,78 @@
   .terminal-body .s { color: #c0c0c0; }
   .terminal-body .blank { display: block; height: 0.4em; }
 
+  /* About section */
+  .about-layout {
+    display: grid;
+    gap: 40px;
+    grid-template-columns: 1fr;
+    margin-top: 24px;
+  }
+  @media (min-width: 768px) {
+    .about-layout {
+      grid-template-columns: 1.2fr 1.8fr;
+    }
+  }
+  .about-story {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .about-story p {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.7;
+    margin-bottom: 20px;
+  }
+  .about-story strong {
+    color: var(--fg);
+  }
+  .features-grid {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .feature-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    transition: all 0.2s ease;
+  }
+  .feature-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--fg);
+  }
+  .feature-title {
+    font-weight: 700;
+    font-size: 16px;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg);
+  }
+  .feature-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    font-size: 14px;
+    color: var(--fg);
+    font-weight: 700;
+  }
+  .feature-desc {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin: 0;
+  }
+
   /* Footer */
   footer {
     margin-top: 64px; padding: 40px 0;
@@ -285,6 +357,7 @@
         <span>FreeLLMAPI</span>
       </a>
       <div class="nav-links">
+        <a href="#about">About</a>
         <a href="#providers">Providers</a>
         <a href="#start">Quick start</a>
         <a href="https://github.com/1bitVscoder/my-freellmapi-proxy" target="_blank" rel="noopener">GitHub</a>
@@ -307,6 +380,56 @@
       <div class="tokens-unit">tokens · per month</div>
       <div class="tokens-sub">Across 60 free-tier models on 11 providers. Mistral alone contributes ~1B; everything else is bonus.</div>
     </div>
+
+    <section id="about">
+      <div class="section-header">
+        <div class="section-eyebrow">About the project</div>
+        <h2>A single interface for the free web</h2>
+      </div>
+      <div class="about-layout">
+        <div class="about-story">
+          <p>
+            <strong>FreeLLMAPI</strong> is designed to solve a simple problem: AI companies offer generous free tiers, but managing dozens of separate API credentials, rate limits, and custom SDKs makes integration impractical.
+          </p>
+          <p>
+            By consolidating Google Gemini, Groq, Cerebras, and 8 other providers under a single, unified endpoint, FreeLLMAPI lets you build against the free web as if it were a single, highly available frontier model.
+          </p>
+          <p>
+            The proxy runs completely locally on your hardware. Keys are stored encrypted with AES-256-GCM, and requests are translated in-flight to matching provider schemas with near-zero latency overhead.
+          </p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-title">
+              <span class="feature-badge">⚡</span>
+              Aggregated Quota
+            </div>
+            <p class="feature-desc">Combines free monthly API allowances into a massive virtual pool of over 1 billion tokens, using whichever keys have remaining quota.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span class="feature-badge">🔌</span>
+              OpenAI Drop-In
+            </div>
+            <p class="feature-desc">Compatible with official OpenAI SDKs, LangChain, LlamaIndex, Cursor, and any chat UI. Just point your client library to the local endpoint.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span class="feature-badge">🛡️</span>
+              Decrypted & Safe
+            </div>
+            <p class="feature-desc">Provider keys are encrypted at-rest using AES-256-GCM in SQLite and decrypted in-memory only when dispatching upstream requests.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span class="feature-badge">🔄</span>
+              Smart Failover
+            </div>
+            <p class="feature-desc">If a provider yields a 429, 5xx, or times out, the router automatically fails over to the next best model in your priority chain.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="providers">
       <div class="section-header">
