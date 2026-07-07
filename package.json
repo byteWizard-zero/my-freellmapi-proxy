@@ -1,7 +1,7 @@
 {
   "name": "freellmapi",
   "description": "A self-hosted, OpenAI-compatible proxy routing across 11+ free-tier LLM providers (Gemini, Groq, Cerebras, etc.) with smart failover and encrypted key storage.",
-  "homepage": "https://1bitVscoder.github.io/my-freellmapi-proxy/",
+  "homepage": "https://byteWizard-zero.github.io/my-freellmapi-proxy/",
   "private": true,
   "workspaces": [
     "shared",
