@@ -379,7 +379,7 @@ export default function KeysPage() {
                       const lastChecked = h?.lastCheckedAt
                       const errorMessage = h?.errorMessage ?? k.errorMessage
                       const isError = status === 'error' || status === 'invalid'
-                      const isExpanded = expandedKeyId === k.id
+                      const isExpanded = expandedKeyId === k.id && isError
 
                       return (
                         <div key={k.id} className="border-b last:border-b-0">

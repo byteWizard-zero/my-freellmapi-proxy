@@ -371,6 +371,12 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           recordTokens(route.platform, route.modelId, route.keyId, estimatedInputTokens + totalOutputTokens);
           recordSuccess(route.modelDbId);
           setStickyModel(messages, route.modelDbId);
+          try {
+            const db = getDb();
+            db.prepare("UPDATE api_keys SET status = 'healthy', error_message = NULL WHERE id = ?").run(route.keyId);
+          } catch (dbErr) {
+            console.error('[Proxy] Failed to update key status on success:', dbErr);
+          }
           logRequest(route.platform, route.modelId, 'success', estimatedInputTokens, totalOutputTokens, Date.now() - start, null);
           return;
         } catch (streamErr: any) {
@@ -399,6 +405,12 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         recordTokens(route.platform, route.modelId, route.keyId, totalTokens);
         recordSuccess(route.modelDbId);
         setStickyModel(messages, route.modelDbId);
+        try {
+          const db = getDb();
+          db.prepare("UPDATE api_keys SET status = 'healthy', error_message = NULL WHERE id = ?").run(route.keyId);
+        } catch (dbErr) {
+          console.error('[Proxy] Failed to update key status on success:', dbErr);
+        }
 
         res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
