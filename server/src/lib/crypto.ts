@@ -25,6 +25,52 @@ function parseHexKey(value: string, source: 'env' | 'db'): Buffer {
   return Buffer.from(value, 'hex');
 }
 
+function migrateKeys(db: Database.Database, oldKey: Buffer, newKey: Buffer): void {
+  // Check if there are keys in api_keys
+  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='api_keys'").get();
+  if (!tableCheck) return;
+
+  const rows = db.prepare('SELECT id, platform, encrypted_key, iv, auth_tag FROM api_keys').all() as any[];
+  if (rows.length === 0) return;
+
+  const updateStmt = db.prepare('UPDATE api_keys SET encrypted_key = ?, iv = ?, auth_tag = ? WHERE id = ?');
+  
+  db.transaction(() => {
+    for (const row of rows) {
+      let decrypted: string | null = null;
+      
+      try {
+        const decipher = crypto.createDecipheriv(ALGORITHM, oldKey, Buffer.from(row.iv, 'hex'));
+        decipher.setAuthTag(Buffer.from(row.auth_tag, 'hex'));
+        let dec = decipher.update(row.encrypted_key, 'hex', 'utf8');
+        dec += decipher.final('utf8');
+        decrypted = dec;
+      } catch (e) {
+        try {
+          const decipher = crypto.createDecipheriv(ALGORITHM, newKey, Buffer.from(row.iv, 'hex'));
+          decipher.setAuthTag(Buffer.from(row.auth_tag, 'hex'));
+          let dec = decipher.update(row.encrypted_key, 'hex', 'utf8');
+          dec += decipher.final('utf8');
+          // Already encrypted with new key
+          continue;
+        } catch (newKeyErr) {
+          // Skip
+        }
+      }
+
+      if (decrypted !== null) {
+        const newIv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv(ALGORITHM, newKey, newIv);
+        let newEncrypted = cipher.update(decrypted, 'utf8', 'hex');
+        newEncrypted += cipher.final('hex');
+        const newAuthTag = cipher.getAuthTag().toString('hex');
+        
+        updateStmt.run(newEncrypted, newIv.toString('hex'), newAuthTag, row.id);
+      }
+    }
+  })();
+}
+
 /**
  * Initialize encryption key from env, DB, or generate a new one.
  * Must be called after DB is initialized.
@@ -32,13 +78,37 @@ function parseHexKey(value: string, source: 'env' | 'db'): Buffer {
 export function initEncryptionKey(db: Database.Database): void {
   // 1. Check env var
   const envKey = process.env.ENCRYPTION_KEY;
-  if (envKey && envKey !== 'your-64-char-hex-key-here') {
-    cachedKey = parseHexKey(envKey, 'env');
+  const hasEnvKey = envKey && envKey !== 'your-64-char-hex-key-here';
+
+  // Check DB for persisted key
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'encryption_key'").get() as { value: string } | undefined;
+
+  if (hasEnvKey) {
+    const parsedEnvKey = parseHexKey(envKey, 'env');
+
+    if (row) {
+      const dbKeyStr = row.value;
+      if (dbKeyStr !== envKey) {
+        // Key changed/mismatches! Migrate stored keys to use the new key
+        try {
+          const parsedDbKey = parseHexKey(dbKeyStr, 'db');
+          migrateKeys(db, parsedDbKey, parsedEnvKey);
+          db.prepare("UPDATE settings SET value = ? WHERE key = 'encryption_key'").run(envKey);
+          console.log('[Crypto] Successfully migrated database keys to use the new ENCRYPTION_KEY.');
+        } catch (err: any) {
+          console.warn('[Crypto] Warning during key migration:', err.message);
+        }
+      }
+    } else {
+      // First run with an env key, persist it for future checks
+      db.prepare("INSERT INTO settings (key, value) VALUES ('encryption_key', ?)").run(envKey);
+    }
+
+    cachedKey = parsedEnvKey;
     return;
   }
 
   // 2. Check DB for persisted key
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'encryption_key'").get() as { value: string } | undefined;
   if (row) {
     cachedKey = parseHexKey(row.value, 'db');
     return;
