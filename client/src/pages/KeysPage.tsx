@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { AlertCircle, Sparkles, ChevronDown, Loader2 } from 'lucide-react'
 import type { ApiKey, Platform } from '../../../shared/types'
 
 const PLATFORMS: { value: Platform; label: string }[] = [
@@ -54,7 +55,7 @@ interface HealthPlatform {
 
 interface HealthData {
   platforms: HealthPlatform[]
-  keys: { id: number; platform: string; status: string; lastCheckedAt: string | null }[]
+  keys: { id: number; platform: string; status: string; lastCheckedAt: string | null; errorMessage?: string | null }[]
 }
 
 function UnifiedKeySection() {
@@ -125,12 +126,70 @@ function UnifiedKeySection() {
   )
 }
 
+function parseMarkdown(text: string) {
+  if (!text) return null
+  const lines = text.split('\n')
+  return lines.map((line, idx) => {
+    const content = line.trim()
+    if (content.startsWith('### ')) {
+      return <h4 key={idx} className="font-semibold text-xs mt-3 mb-1 text-foreground">{content.slice(4)}</h4>
+    }
+    if (content.startsWith('## ')) {
+      return <h3 key={idx} className="font-bold text-sm mt-4 mb-2 text-foreground">{content.slice(3)}</h3>
+    }
+    if (content.startsWith('# ')) {
+      return <h2 key={idx} className="font-extrabold text-base mt-4 mb-2 text-foreground">{content.slice(2)}</h2>
+    }
+
+    const isBullet = content.startsWith('- ') || content.startsWith('* ') || /^\d+\.\s/.test(content)
+    let bulletText = content
+    if (content.startsWith('- ') || content.startsWith('* ')) {
+      bulletText = content.slice(2)
+    } else if (/^\d+\.\s/.test(content)) {
+      bulletText = content.replace(/^\d+\.\s/, '')
+    }
+
+    const parts = []
+    let currentText = bulletText
+    const boldRegex = /\*\*(.*?)\*\*/g
+    let match
+    let lastIndex = 0
+    while ((match = boldRegex.exec(currentText)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(currentText.substring(lastIndex, match.index))
+      }
+      parts.push(<strong key={match.index} className="font-semibold text-foreground">{match[1]}</strong>)
+      lastIndex = boldRegex.lastIndex
+    }
+    if (lastIndex < currentText.length) {
+      parts.push(currentText.substring(lastIndex))
+    }
+
+    const renderedContent = parts.length > 0 ? parts : bulletText
+
+    if (isBullet) {
+      return (
+        <div key={idx} className="flex gap-2 ml-2 my-1 text-xs">
+          <span className="text-muted-foreground select-none">•</span>
+          <span>{renderedContent}</span>
+        </div>
+      )
+    }
+
+    return content ? <p key={idx} className="my-1.5 leading-relaxed text-xs">{renderedContent}</p> : <div key={idx} className="h-2" />
+  })
+}
+
 export default function KeysPage() {
   const queryClient = useQueryClient()
   const [platform, setPlatform] = useState<Platform | ''>('')
   const [apiKey, setApiKey] = useState('')
   const [accountId, setAccountId] = useState('')
   const [label, setLabel] = useState('')
+  
+  const [expandedKeyId, setExpandedKeyId] = useState<number | null>(null)
+  const [troubleshootText, setTroubleshootText] = useState<string | null>(null)
+  const [loadingTroubleshoot, setLoadingTroubleshoot] = useState(false)
 
   const { data: keys = [], isLoading } = useQuery<ApiKey[]>({
     queryKey: ['keys'],
@@ -191,7 +250,29 @@ export default function KeysPage() {
     addKey.mutate({ platform, key, label: label || undefined })
   }
 
-  const healthKeyMap = new Map<number, { status: string; lastCheckedAt: string | null }>()
+  const handleToggleExpand = async (keyId: number) => {
+    if (expandedKeyId === keyId) {
+      setExpandedKeyId(null)
+      return
+    }
+
+    setExpandedKeyId(keyId)
+    setLoadingTroubleshoot(true)
+    setTroubleshootText(null)
+
+    try {
+      const res = await apiFetch<{ suggestion: string }>(`/api/keys/${keyId}/troubleshoot`, {
+        method: 'POST',
+      })
+      setTroubleshootText(res.suggestion)
+    } catch (err: any) {
+      setTroubleshootText(`Could not generate suggestions: ${err.message}`)
+    } finally {
+      setLoadingTroubleshoot(false)
+    }
+  }
+
+  const healthKeyMap = new Map<number, { status: string; lastCheckedAt: string | null; errorMessage?: string | null }>()
   for (const k of healthData?.keys ?? []) healthKeyMap.set(k.id, k)
 
   const grouped = PLATFORMS.map(p => ({
@@ -296,24 +377,99 @@ export default function KeysPage() {
                       const h = healthKeyMap.get(k.id)
                       const status = h?.status ?? k.status
                       const lastChecked = h?.lastCheckedAt
+                      const errorMessage = h?.errorMessage ?? k.errorMessage
+                      const isError = status === 'error' || status === 'invalid'
+                      const isExpanded = expandedKeyId === k.id
+
                       return (
-                        <div key={k.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
-                          <span className={`size-1.5 rounded-full flex-shrink-0 ${statusDot[status] ?? statusDot.unknown}`} />
-                          <code className="text-xs font-mono flex-shrink-0">{k.maskedKey}</code>
-                          {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
-                          <span className="text-xs text-muted-foreground">{statusLabel[status] ?? status}</span>
-                          <div className="flex-1" />
-                          {lastChecked && (
-                            <span className="text-[11px] text-muted-foreground tabular-nums">
-                              {new Date(lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <div key={k.id} className="border-b last:border-b-0">
+                          <div
+                            onClick={() => {
+                              if (isError) handleToggleExpand(k.id)
+                            }}
+                            className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                              isError ? 'cursor-pointer hover:bg-muted/40' : 'hover:bg-muted/10'
+                            }`}
+                          >
+                            <span className={`size-1.5 rounded-full flex-shrink-0 ${statusDot[status] ?? statusDot.unknown}`} />
+                            <code className="text-xs font-mono flex-shrink-0">{k.maskedKey}</code>
+                            {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
+                            
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              {statusLabel[status] ?? status}
+                              {isError && (
+                                <ChevronDown
+                                  className={`size-3.5 text-muted-foreground transition-transform duration-200 ${
+                                    isExpanded ? 'rotate-180 text-rose-500 font-semibold' : ''
+                                  }`}
+                                />
+                              )}
                             </span>
-                          )}
-                          <Button variant="ghost" size="xs" onClick={() => checkKey.mutate(k.id)} disabled={checkKey.isPending}>
-                            Check
-                          </Button>
-                          <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => deleteKey.mutate(k.id)} disabled={deleteKey.isPending}>
-                            Remove
-                          </Button>
+
+                            <div className="flex-1" />
+                            {lastChecked && (
+                              <span className="text-[11px] text-muted-foreground tabular-nums mr-2">
+                                {new Date(lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                checkKey.mutate(k.id)
+                              }}
+                              disabled={checkKey.isPending}
+                            >
+                              Check
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deleteKey.mutate(k.id)
+                              }}
+                              disabled={deleteKey.isPending}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+
+                          <div className={`grid transition-all duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+                            <div className="overflow-hidden bg-muted/10">
+                              <div className="px-4 pb-4 pt-2 border-t space-y-3">
+                                <div className="space-y-1">
+                                  <h4 className="text-[10px] font-bold tracking-wider text-rose-500 uppercase flex items-center gap-1">
+                                    <AlertCircle className="size-3" />
+                                    Exact Error Message
+                                  </h4>
+                                  <pre className="text-[11px] font-mono bg-rose-500/5 text-rose-600 dark:text-rose-400 p-2.5 rounded-md border border-rose-500/10 whitespace-pre-wrap select-all">
+                                    {errorMessage || 'Unknown validation error'}
+                                  </pre>
+                                </div>
+                                <div className="space-y-1">
+                                  <h4 className="text-[10px] font-bold tracking-wider text-primary uppercase flex items-center gap-1">
+                                    <Sparkles className="size-3" />
+                                    AI Troubleshooting Suggestions
+                                  </h4>
+                                  <div className="text-xs text-muted-foreground bg-background/50 p-3 rounded-md border">
+                                    {loadingTroubleshoot ? (
+                                      <div className="flex items-center gap-2 py-1 text-muted-foreground font-medium">
+                                        <Loader2 className="size-3 animate-spin text-primary" />
+                                        <span>Generating suggestions using available healthy keys...</span>
+                                      </div>
+                                    ) : troubleshootText ? (
+                                      parseMarkdown(troubleshootText)
+                                    ) : (
+                                      <span className="text-muted-foreground italic text-xs">Failed to load troubleshooting tips.</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )
                     })}

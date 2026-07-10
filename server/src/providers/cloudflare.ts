@@ -126,25 +126,53 @@ export class CloudflareProvider extends BaseProvider {
     }
   }
 
-  async validateKey(apiKey: string): Promise<boolean> {
-    // Transport errors propagate — health.ts marks status='error' without
-    // counting toward auto-disable. Only confirmed bad/inactive tokens disable.
+  async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     let token: string;
     try {
       const parsed = this.parseKey(apiKey);
       token = parsed.token;
-    } catch {
-      return false; // Structurally invalid keys are invalid
+    } catch (e: any) {
+      return { isValid: false, error: e.message || 'Structurally invalid Cloudflare key (format must be "account_id:api_token")', isAuthError: true };
     }
 
-    const res = await this.fetchWithTimeout(
-      'https://api.cloudflare.com/client/v4/user/tokens/verify',
-      { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },
-      10000,
-    );
-    if (res.status === 401 || res.status === 403) return false;
-    if (!res.ok) return true; // unexpected non-2xx that isn't auth — don't disable
-    const data = await res.json() as any;
-    return data.success === true && data.result?.status === 'active';
+    try {
+      const res = await this.fetchWithTimeout(
+        'https://api.cloudflare.com/client/v4/user/tokens/verify',
+        { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },
+        10000,
+      );
+
+      if (res.status === 401 || res.status === 403) {
+        let errorMsg = `Unauthorized (${res.status})`;
+        try {
+          const body = await res.json().catch(() => ({}));
+          errorMsg = body.errors?.[0]?.message ?? body.message ?? errorMsg;
+        } catch {
+          // ignore
+        }
+        return { isValid: false, error: errorMsg, isAuthError: true };
+      }
+
+      if (!res.ok) {
+        let errorMsg = `API Error ${res.status}: ${res.statusText}`;
+        try {
+          const body = await res.json().catch(() => ({}));
+          errorMsg = body.errors?.[0]?.message ?? body.message ?? errorMsg;
+        } catch {
+          // ignore
+        }
+        return { isValid: false, error: errorMsg, isAuthError: false };
+      }
+
+      const data = await res.json() as any;
+      if (data.success !== true || data.result?.status !== 'active') {
+        const errorMsg = data.errors?.[0]?.message || 'Cloudflare API token is not active';
+        return { isValid: false, error: errorMsg, isAuthError: true };
+      }
+
+      return { isValid: true };
+    } catch (e: any) {
+      return { isValid: false, error: e.message || 'Connection timeout or network failure', isAuthError: false };
+    }
   }
 }

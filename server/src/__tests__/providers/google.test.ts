@@ -60,10 +60,13 @@ describe('GoogleProvider', () => {
 
   it('should validate key via models endpoint', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true } as any);
-    expect(await provider.validateKey('valid-key')).toBe(true);
+    const res1 = await provider.validateKey('valid-key');
+    expect(res1.isValid).toBe(true);
 
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: false, status: 401 } as any);
-    expect(await provider.validateKey('invalid-key')).toBe(false);
+    const res2 = await provider.validateKey('invalid-key');
+    expect(res2.isValid).toBe(false);
+    expect(res2.isAuthError).toBe(true);
   });
 
   it('should translate system messages to systemInstruction', async () => {

@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { encrypt, decrypt, maskKey } from '../lib/crypto.js';
+import { routeRequest } from '../services/router.js';
 
 export const keysRouter = Router();
 
@@ -43,6 +44,7 @@ keysRouter.get('/', (_req: Request, res: Response) => {
       enabled: row.enabled === 1,
       createdAt: row.created_at,
       lastCheckedAt: row.last_checked_at,
+      errorMessage: row.error_message,
     };
   });
 
@@ -118,4 +120,61 @@ keysRouter.patch('/:id', (req: Request, res: Response) => {
   }
 
   res.json({ success: true, enabled });
+});
+
+// AI troubleshooting route
+keysRouter.post('/:id/troubleshoot', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: { message: 'Invalid key ID' } });
+    return;
+  }
+
+  const db = getDb();
+  const keyRow = db.prepare('SELECT id, platform, status, error_message FROM api_keys WHERE id = ?').get(id) as any;
+  if (!keyRow) {
+    res.status(404).json({ error: { message: 'Key not found' } });
+    return;
+  }
+
+  const errorMsg = keyRow.error_message || 'No recorded error. The key is either working or has not been checked yet.';
+
+  let suggestion = '';
+  let routedModelInfo = '';
+  try {
+    const route = routeRequest(2000); // Route using the best available model/key
+    routedModelInfo = `${route.platform}/${route.modelId}`;
+
+    const prompt = `You are an AI assistant helping a developer debug an API key validation/connection error in FreeLLMAPI (a self-hosted OpenAI-compatible proxy).
+
+Platform with error: "${keyRow.platform}"
+Error message received from API: "${errorMsg}"
+
+Please analyze this error and provide:
+1. A brief, clear explanation of what this error message means (e.g. rate limit, bad API key format, lack of credits, wrong endpoint URL).
+2. Actionable, step-by-step instructions (3-4 bullet points) to fix it. Keep it concise, developer-friendly, and formatted in clean markdown. Do not include introductory text, just jump straight to the explanation and steps.`;
+
+    const chatRes = await route.provider.chatCompletion(
+      route.apiKey,
+      [
+        { role: 'system', content: 'You are an expert API troubleshooting assistant.' },
+        { role: 'user', content: prompt }
+      ],
+      route.modelId,
+      { temperature: 0.2 }
+    );
+    suggestion = chatRes.choices[0]?.message?.content ?? 'Failed to generate AI advice.';
+  } catch (e: any) {
+    console.warn('[Troubleshoot] Could not route to an LLM to generate suggestions:', e.message);
+    
+    suggestion = `### Fallback Troubleshooting (No active AI keys available to generate dynamic suggestions)
+
+**Potential issues for ${keyRow.platform}:**
+- **Wrong Key format:** Check that the key starts with the correct prefix (e.g. \`gsk_\` for Groq, \`AIzaSy\` for Google, etc.).
+- **Missing billing or expired limits:** Many free tiers require verified phone numbers or accounts in good standing.
+- **Connection Issues:** Ensure the proxy server has access to the internet and isn't blocked by a firewall.
+- **Detailed Error:** \`${errorMsg}\``;
+  }
+
+  res.json({ suggestion, routedVia: routedModelInfo });
 });

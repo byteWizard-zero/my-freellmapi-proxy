@@ -35,7 +35,7 @@ export abstract class BaseProvider {
     options?: CompletionOptions,
   ): AsyncGenerator<ChatCompletionChunk>;
 
-  abstract validateKey(apiKey: string): Promise<boolean>;
+  abstract validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }>;
 
   protected async fetchWithTimeout(
     url: string,

@@ -99,8 +99,10 @@ describe('CloudflareProvider', () => {
       ok: true,
       json: () => Promise.resolve({ success: true, result: { status: 'active' } }),
     } as any);
-    expect(await provider.validateKey('acc-id:valid-token')).toBe(true);
+    const res1 = await provider.validateKey('acc-id:valid-token');
+    expect(res1.isValid).toBe(true);
 
-    expect(await provider.validateKey('no-colon')).toBe(false);
+    const res2 = await provider.validateKey('no-colon');
+    expect(res2.isValid).toBe(false);
   });
 });

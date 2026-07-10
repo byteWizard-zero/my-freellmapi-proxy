@@ -49,6 +49,7 @@ export interface ApiKey {
   enabled: boolean;
   createdAt: string;
   lastCheckedAt: string | null;
+  errorMessage?: string | null;
 }
 
 export interface ApiKeyCreate {

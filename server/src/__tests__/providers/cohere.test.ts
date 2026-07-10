@@ -61,6 +61,7 @@ describe('CohereProvider', () => {
 
   it('should validate key', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true } as any);
-    expect(await provider.validateKey('valid')).toBe(true);
+    const res = await provider.validateKey('valid');
+    expect(res.isValid).toBe(true);
   });
 });

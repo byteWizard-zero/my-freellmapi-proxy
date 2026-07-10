@@ -19,16 +19,19 @@ export async function checkKeyHealth(keyId: number): Promise<KeyStatus> {
 
   try {
     const apiKey = decrypt(row.encrypted_key, row.iv, row.auth_tag);
-    const isValid = await provider.validateKey(apiKey);
+    const { isValid, error, isAuthError } = await provider.validateKey(apiKey);
 
-    const status: KeyStatus = isValid ? 'healthy' : 'invalid';
+    let status: KeyStatus = 'healthy';
+    if (!isValid) {
+      status = isAuthError ? 'invalid' : 'error';
+    }
 
-    db.prepare("UPDATE api_keys SET status = ?, last_checked_at = datetime('now') WHERE id = ?")
-      .run(status, keyId);
+    db.prepare("UPDATE api_keys SET status = ?, last_checked_at = datetime('now'), error_message = ? WHERE id = ?")
+      .run(status, isValid ? null : (error ?? 'Validation failed'), keyId);
 
     if (isValid) {
       failureCount.delete(keyId);
-    } else {
+    } else if (isAuthError) {
       const count = (failureCount.get(keyId) ?? 0) + 1;
       failureCount.set(keyId, count);
 
@@ -44,8 +47,8 @@ export async function checkKeyHealth(keyId: number): Promise<KeyStatus> {
     // a bad key. Mark status='error' but do NOT increment failure counter — auto-
     // disable is reserved for confirmed 401/403 (returned by validateKey as false).
     console.error(`[Health] Key ${keyId} transport error:`, err.message);
-    db.prepare("UPDATE api_keys SET status = ?, last_checked_at = datetime('now') WHERE id = ?")
-      .run('error', keyId);
+    db.prepare("UPDATE api_keys SET status = ?, last_checked_at = datetime('now'), error_message = ? WHERE id = ?")
+      .run('error', err.message || 'Transport or connection error', keyId);
     return 'error';
   }
 }

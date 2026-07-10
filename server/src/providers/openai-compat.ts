@@ -150,19 +150,43 @@ export class OpenAICompatProvider extends BaseProvider {
     }
   }
 
-  async validateKey(apiKey: string): Promise<boolean> {
-    // Note: transport errors (DNS / timeout / TLS) propagate to the caller.
-    // health.ts catches them and marks status='error' WITHOUT incrementing
-    // the consecutive-failure counter — only confirmed 401/403 disables a key.
+  async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     const url = this.validateUrl ?? `${this.baseUrl}/models`;
-    const res = await this.fetchWithTimeout(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        ...this.extraHeaders,
-      },
-    }, 10000);
-    return res.status !== 401 && res.status !== 403;
+    try {
+      const res = await this.fetchWithTimeout(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          ...this.extraHeaders,
+        },
+      }, 10000);
+
+      if (res.status === 401 || res.status === 403) {
+        let errorMsg = `Unauthorized (${res.status})`;
+        try {
+          const body = await res.json().catch(() => ({}));
+          errorMsg = body.error?.message ?? body.message ?? errorMsg;
+        } catch {
+          // ignore
+        }
+        return { isValid: false, error: errorMsg, isAuthError: true };
+      }
+
+      if (!res.ok) {
+        let errorMsg = `API Error ${res.status}: ${res.statusText}`;
+        try {
+          const body = await res.json().catch(() => ({}));
+          errorMsg = body.error?.message ?? body.message ?? errorMsg;
+        } catch {
+          // ignore
+        }
+        return { isValid: false, error: errorMsg, isAuthError: false };
+      }
+
+      return { isValid: true };
+    } catch (e: any) {
+      return { isValid: false, error: e.message || 'Connection timeout or network failure', isAuthError: false };
+    }
   }
 }
 

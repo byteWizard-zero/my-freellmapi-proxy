@@ -46,6 +46,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV9(db);
   migrateModelsV10(db);
   migrateModelsV11(db);
+  migrateModelsV12(db);
   ensureUnifiedKey(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
@@ -82,7 +83,8 @@ function createTables(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'unknown',
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_checked_at TEXT
+      last_checked_at TEXT,
+      error_message TEXT
     );
 
     CREATE TABLE IF NOT EXISTS requests (
@@ -927,6 +929,15 @@ function migrateModelsV11(db: Database.Database) {
     }
   });
   apply();
+}
+
+function migrateModelsV12(db: Database.Database) {
+  const pragma = db.pragma('table_info(api_keys)') as any[];
+  const hasErrorMessage = pragma.some(col => col.name === 'error_message');
+  if (!hasErrorMessage) {
+    db.prepare('ALTER TABLE api_keys ADD COLUMN error_message TEXT').run();
+    console.log('[Migration] Added error_message column to api_keys table');
+  }
 }
 
 function ensureUnifiedKey(db: Database.Database) {

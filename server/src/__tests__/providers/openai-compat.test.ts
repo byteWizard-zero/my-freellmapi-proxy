@@ -107,17 +107,23 @@ describe('OpenAICompatProvider', () => {
 
   it('should validate key using models endpoint', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true, status: 200 } as any);
-    expect(await provider.validateKey('valid')).toBe(true);
+    const res = await provider.validateKey('valid');
+    expect(res.isValid).toBe(true);
   });
 
   it('validateKey returns false on confirmed 401', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: false, status: 401 } as any);
-    expect(await provider.validateKey('bad')).toBe(false);
+    const res = await provider.validateKey('bad');
+    expect(res.isValid).toBe(false);
+    expect(res.isAuthError).toBe(true);
   });
 
-  it('validateKey propagates transport errors instead of swallowing', async () => {
+  it('validateKey returns error on transport errors instead of throwing', async () => {
     vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    await expect(provider.validateKey('any')).rejects.toThrow(/ECONNREFUSED/);
+    const res = await provider.validateKey('any');
+    expect(res.isValid).toBe(false);
+    expect(res.isAuthError).toBe(false);
+    expect(res.error).toContain('ECONNREFUSED');
   });
 
   it('folds reasoning_content into content when content is empty (Z.ai glm-4.5-flash style)', async () => {
