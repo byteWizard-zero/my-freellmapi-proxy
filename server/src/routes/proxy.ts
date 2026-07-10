@@ -179,6 +179,28 @@ function isRetryableError(err: any): boolean {
     || msg.includes('500') || msg.includes('internal server error');
 }
 
+function isModelNotFoundError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('404')
+    || msg.includes('model not found')
+    || msg.includes('does not exist')
+    || msg.includes('no longer available')
+    || msg.includes('unknown model')
+    || msg.includes('unavailable_model')
+    || msg.includes('unavailable model');
+}
+
+function isInvalidKeyError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('401')
+    || msg.includes('403')
+    || msg.includes('unauthorized')
+    || msg.includes('invalid api key')
+    || msg.includes('invalid key')
+    || msg.includes('authentication')
+    || msg.includes('forbidden');
+}
+
 proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   const start = Date.now();
 
@@ -394,7 +416,30 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       const latency = Date.now() - start;
       logRequest(route.platform, route.modelId, 'error', estimatedInputTokens, 0, latency, err.message);
 
-      if (isRetryableError(err)) {
+      const isModelNotFound = isModelNotFoundError(err);
+      const isInvalidKey = isInvalidKeyError(err);
+
+      if (isModelNotFound) {
+        try {
+          const db = getDb();
+          db.prepare('UPDATE models SET enabled = 0 WHERE id = ?').run(route.modelDbId);
+          console.warn(`[Proxy] Model '${route.modelId}' on platform '${route.platform}' returned 404 (not found). Automatically disabling this model in the database.`);
+        } catch (dbErr) {
+          console.error('[Proxy] Failed to disable model in DB:', dbErr);
+        }
+      }
+
+      if (isInvalidKey) {
+        try {
+          const db = getDb();
+          db.prepare("UPDATE api_keys SET status = 'invalid', enabled = 0 WHERE id = ?").run(route.keyId);
+          console.warn(`[Proxy] Key ID ${route.keyId} for platform '${route.platform}' returned 401/403 (unauthorized). Automatically disabling this key in the database.`);
+        } catch (dbErr) {
+          console.error('[Proxy] Failed to disable key in DB:', dbErr);
+        }
+      }
+
+      if (isRetryableError(err) || isModelNotFound || isInvalidKey) {
         // Put this model+key on cooldown and try the next one
         const skipId = `${route.platform}:${route.modelId}:${route.keyId}`;
         skipKeys.add(skipId);
@@ -405,7 +450,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         continue;
       }
 
-      // Non-retryable error (auth, 4xx, etc.): don't retry
+      // Non-retryable error (other 4xx, etc.): don't retry
       res.status(502).json({
         error: {
           message: `Provider error (${route.displayName}): ${err.message}`,
