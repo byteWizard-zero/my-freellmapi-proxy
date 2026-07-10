@@ -7,6 +7,7 @@ import type {
   ChatToolDefinition,
   TokenUsage,
 } from '@freellmapi/shared/types.js';
+import crypto from 'crypto';
 import { BaseProvider, type CompletionOptions } from './base.js';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -179,11 +180,17 @@ function extractToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[] {
   const calls: ChatToolCall[] = [];
   if (!parts) return calls;
 
-  let fallbackIndex = 0;
   for (const part of parts) {
     if (!part.functionCall?.name) continue;
 
-    const id = part.functionCall.id ?? `call_${Date.now()}_${fallbackIndex++}`;
+    let id = part.functionCall.id;
+    if (!id) {
+      const argsStr = normalizeGeminiArgs(part.functionCall.args);
+      const hashInput = `${part.functionCall.name}:${argsStr}`;
+      const hash = crypto.createHash('sha256').update(hashInput).digest('hex').slice(0, 16);
+      id = `call_${hash}`;
+    }
+
     calls.push({
       id,
       type: 'function',

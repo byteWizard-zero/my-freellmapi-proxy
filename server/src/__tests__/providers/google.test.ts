@@ -309,4 +309,24 @@ describe('GoogleProvider', () => {
     expect(toolDeltas[0].function.arguments).toBe('{"city":"Karachi"}');
     expect(chunks[chunks.length - 1].choices[0].finish_reason).toBe('tool_calls');
   });
+
+  it('deduplicates streamed tool calls when no ID is provided by the API', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce(sseResponse([
+      'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"Karachi"}}}]}}]}\n\n',
+      'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"Karachi"}}}]}}]}\n\n',
+      'data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}\n\n',
+    ]));
+
+    const chunks = await collect(provider.streamChatCompletion(
+      'test-key',
+      [{ role: 'user', content: 'Weather?' }],
+      'gemini-2.5-pro',
+    ));
+
+    const toolDeltas = chunks.flatMap(c => c.choices[0].delta.tool_calls ?? []);
+    expect(toolDeltas).toHaveLength(1);
+    expect(toolDeltas[0].function.name).toBe('get_weather');
+    expect(toolDeltas[0].function.arguments).toBe('{"city":"Karachi"}');
+    expect(toolDeltas[0].id).toMatch(/^call_[a-f0-9]{16}$/);
+  });
 });
