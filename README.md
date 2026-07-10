@@ -332,3 +332,4 @@ Removed since the April 2026 review: Hugging Face, Moonshot, and MiniMax direct 
 [MIT](./LICENSE)
 
 <!-- YOLO badge test -->
+<!-- Pair Extraordinaire badge test -->
