@@ -125,7 +125,24 @@ export class OpenAICompatProvider extends BaseProvider {
         const data = trimmed.slice(6);
         if (data === '[DONE]') return;
         try {
-          yield JSON.parse(data) as ChatCompletionChunk;
+          const chunk = JSON.parse(data) as ChatCompletionChunk;
+          if (chunk.choices) {
+            for (const choice of chunk.choices) {
+              const delta = choice.delta as any;
+              if (delta) {
+                const hasToolCalls = Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0;
+                if (!hasToolCalls && (delta.content === '' || delta.content == null)) {
+                  const fold = (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
+                    ? delta.reasoning_content
+                    : (typeof delta.reasoning === 'string' && delta.reasoning.length > 0 ? delta.reasoning : null);
+                  if (fold !== null) {
+                    delta.content = fold;
+                  }
+                }
+              }
+            }
+          }
+          yield chunk;
         } catch {
           // Skip malformed chunks
         }

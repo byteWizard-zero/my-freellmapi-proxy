@@ -92,4 +92,15 @@ describe('CloudflareProvider', () => {
     expect(capturedBody.messages[1].content).toBe('');
     expect(capturedBody.messages[1].tool_calls).toHaveLength(1);
   });
+
+  it('should validate valid token and reject invalid structures in validateKey', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: () => Promise.resolve({ success: true, result: { status: 'active' } }),
+    } as any);
+    expect(await provider.validateKey('acc-id:valid-token')).toBe(true);
+
+    expect(await provider.validateKey('no-colon')).toBe(false);
+  });
 });

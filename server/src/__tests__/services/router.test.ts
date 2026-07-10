@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { initDb, getDb } from '../../db/index.js';
 import { encrypt } from '../../lib/crypto.js';
-import { routeRequest } from '../../services/router.js';
+import { routeRequest, recordRateLimitHit, getAllPenalties } from '../../services/router.js';
 
 describe('Router', () => {
   beforeAll(() => {
@@ -95,5 +95,32 @@ describe('Router', () => {
 
     const result = routeRequest();
     expect(result.platform).toBe('groq');
+  });
+
+  it('should track penalties and decay correctly preserving fractional remainders', () => {
+    recordRateLimitHit(100);
+    let penalties = getAllPenalties();
+    expect(penalties.find(p => p.modelDbId === 100)?.penalty).toBe(3);
+
+    const originalDateNow = Date.now;
+    const start = Date.now();
+    
+    // Simulate 3 minutes later (1.5 intervals of 2 mins)
+    global.Date.now = () => start + 3 * 60 * 1000;
+    
+    penalties = getAllPenalties();
+    // 1 step decayed: 3 - 1 = 2
+    expect(penalties.find(p => p.modelDbId === 100)?.penalty).toBe(2);
+
+    // Simulate 4.5 minutes from start. 
+    // Since the first decay advanced the baseline to (start + 2 mins), 
+    // at 4.5 minutes, 2.5 minutes have elapsed since the baseline, so it should decay again!
+    global.Date.now = () => start + 4.5 * 60 * 1000;
+    
+    penalties = getAllPenalties();
+    // 2nd step decayed: 2 - 1 = 1
+    expect(penalties.find(p => p.modelDbId === 100)?.penalty).toBe(1);
+
+    global.Date.now = originalDateNow;
   });
 });

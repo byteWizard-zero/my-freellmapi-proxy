@@ -233,6 +233,41 @@ describe('OpenAICompatProvider', () => {
     const result = await provider.chatCompletion('k', [{ role: 'user', content: 'hi' }], 'm');
     expect(result.choices[0].message.content).toBe('normal answer');
   });
+
+  it('folds reasoning_content into content in streamChatCompletion chunks', async () => {
+    const sseResponse = (frames: string[]): any => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder();
+          for (const f of frames) controller.enqueue(encoder.encode(f));
+          controller.close();
+        },
+      });
+      return { ok: true, body: stream };
+    };
+
+    const collect = async <T>(gen: AsyncGenerator<T>): Promise<T[]> => {
+      const out: T[] = [];
+      for await (const c of gen) out.push(c);
+      return out;
+    };
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce(sseResponse([
+      'data: {"choices":[{"index":0,"delta":{"reasoning_content":"Thinking..."}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"content":"Answer!"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+
+    const chunks = await collect(provider.streamChatCompletion(
+      'key',
+      [{ role: 'user', content: 'hi' }],
+      'model',
+    ));
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].choices[0].delta.content).toBe('Thinking...');
+    expect(chunks[1].choices[0].delta.content).toBe('Answer!');
+  });
 });
 
 describe('OpenAICompatProvider - platform instances', () => {

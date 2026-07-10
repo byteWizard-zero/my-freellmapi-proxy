@@ -129,7 +129,14 @@ export class CloudflareProvider extends BaseProvider {
   async validateKey(apiKey: string): Promise<boolean> {
     // Transport errors propagate — health.ts marks status='error' without
     // counting toward auto-disable. Only confirmed bad/inactive tokens disable.
-    const { token } = this.parseKey(apiKey);
+    let token: string;
+    try {
+      const parsed = this.parseKey(apiKey);
+      token = parsed.token;
+    } catch {
+      return false; // Structurally invalid keys are invalid
+    }
+
     const res = await this.fetchWithTimeout(
       'https://api.cloudflare.com/client/v4/user/tokens/verify',
       { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },

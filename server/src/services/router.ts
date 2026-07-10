@@ -95,7 +95,7 @@ function getPenalty(modelDbId: number): number {
   const decaySteps = Math.floor(elapsed / DECAY_INTERVAL_MS);
   if (decaySteps > 0) {
     entry.penalty = Math.max(0, entry.penalty - (decaySteps * DECAY_AMOUNT));
-    entry.lastHit = now; // reset so we don't double-decay
+    entry.lastHit = entry.lastHit + (decaySteps * DECAY_INTERVAL_MS);
     if (entry.penalty === 0) {
       rateLimitPenalties.delete(modelDbId);
       return 0;
