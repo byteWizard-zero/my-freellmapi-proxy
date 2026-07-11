@@ -104,23 +104,48 @@ export function recordTokens(
   getWindow(tpdKey).tokenTimestamps.push({ ts: now, tokens });
 }
 
-// Cooldown: when a provider returns 429, block that model+key for a period
-const cooldowns = new Map<string, number>(); // key -> expiry timestamp
+// Cooldown: when a provider returns 429, block that API key globally for a period
+export interface CooldownInfo {
+  keyId: number;
+  platform: string;
+  modelId: string;
+  errorMessage: string;
+  expiry: number;
+}
 
-export function setCooldown(platform: string, modelId: string, keyId: number, durationMs = 60_000) {
-  const key = `${platform}:${modelId}:${keyId}:cooldown`;
-  cooldowns.set(key, Date.now() + durationMs);
+const cooldowns = new Map<number, CooldownInfo>(); // keyId -> CooldownInfo
+
+export function setCooldown(platform: string, modelId: string, keyId: number, durationMs = 3600_000, errorMessage = '') {
+  cooldowns.set(keyId, {
+    keyId,
+    platform,
+    modelId,
+    errorMessage: errorMessage || 'Transient rate limit or provider error',
+    expiry: Date.now() + durationMs,
+  });
 }
 
 export function isOnCooldown(platform: string, modelId: string, keyId: number): boolean {
-  const key = `${platform}:${modelId}:${keyId}:cooldown`;
-  const expiry = cooldowns.get(key);
-  if (!expiry) return false;
-  if (Date.now() > expiry) {
-    cooldowns.delete(key);
+  const info = cooldowns.get(keyId);
+  if (!info) return false;
+  if (Date.now() > info.expiry) {
+    cooldowns.delete(keyId);
     return false;
   }
   return true;
+}
+
+export function getActiveCooldowns(): CooldownInfo[] {
+  const now = Date.now();
+  const list: CooldownInfo[] = [];
+  for (const [keyId, info] of cooldowns.entries()) {
+    if (now > info.expiry) {
+      cooldowns.delete(keyId);
+    } else {
+      list.push(info);
+    }
+  }
+  return list;
 }
 
 export function getRateLimitStatus(

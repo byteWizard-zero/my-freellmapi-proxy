@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import { getDb } from '../db/index.js';
 import { checkKeyHealth, checkAllKeys } from '../services/health.js';
 import { hasProvider } from '../providers/index.js';
+import { decrypt, maskKey } from '../lib/crypto.js';
+import { getActiveCooldowns } from '../services/ratelimit.js';
 
 export const healthRouter = Router();
 
@@ -52,6 +54,30 @@ healthRouter.get('/', (_req: Request, res: Response) => {
       lastCheckedAt: k.last_checked_at,
       errorMessage: k.error_message,
     })),
+    cooldowns: getActiveCooldowns().map(c => {
+      const keyRow = db.prepare('SELECT label, encrypted_key, iv, auth_tag FROM api_keys WHERE id = ?').get(c.keyId) as any;
+      let label = '';
+      let maskedKey = '****';
+      if (keyRow) {
+        label = keyRow.label || '';
+        try {
+          const realKey = decrypt(keyRow.encrypted_key, keyRow.iv, keyRow.auth_tag);
+          maskedKey = maskKey(realKey);
+        } catch {
+          maskedKey = '[decrypt failed]';
+        }
+      }
+      return {
+        keyId: c.keyId,
+        platform: c.platform,
+        modelId: c.modelId,
+        errorMessage: c.errorMessage,
+        expiry: new Date(c.expiry).toISOString(),
+        remainingSeconds: Math.max(0, Math.ceil((c.expiry - Date.now()) / 1000)),
+        label,
+        maskedKey,
+      };
+    }),
   });
 });
 
