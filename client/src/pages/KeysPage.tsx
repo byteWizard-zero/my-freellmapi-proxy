@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
-import { AlertCircle, Sparkles, ChevronDown, Loader2 } from 'lucide-react'
+import { AlertCircle, Sparkles, ChevronDown, Loader2, AlertTriangle } from 'lucide-react'
 import type { ApiKey, Platform } from '../../../shared/types'
 
 const PLATFORMS: { value: Platform; label: string }[] = [
@@ -75,6 +75,7 @@ function UnifiedKeySection() {
   const queryClient = useQueryClient()
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   const { data } = useQuery<{ apiKey: string }>({
     queryKey: ['unified-key'],
@@ -110,7 +111,7 @@ function UnifiedKeySection() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => regenerate.mutate()}
+          onClick={() => setShowConfirm(true)}
           disabled={regenerate.isPending}
         >
           Regenerate
@@ -135,6 +136,49 @@ function UnifiedKeySection() {
         <span className="text-muted-foreground">Endpoint</span>
         <code className="font-mono">/v1/chat/completions</code>
       </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 backdrop-blur-sm transition-all duration-200">
+          <div className="bg-card border border-border/80 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-destructive/10 text-destructive flex-shrink-0">
+                <AlertTriangle className="size-5" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-semibold leading-none text-foreground">Regenerate Unified API Key?</h3>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                  Are you sure you want to regenerate your unified API key? The current key will be immediately invalidated, and any apps or integrations using it will fail to connect until updated.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConfirm(false)}
+                disabled={regenerate.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  regenerate.mutate(undefined, {
+                    onSuccess: () => {
+                      setShowConfirm(false)
+                    }
+                  })
+                }}
+                disabled={regenerate.isPending}
+              >
+                {regenerate.isPending ? 'Regenerating…' : 'Regenerate Key'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

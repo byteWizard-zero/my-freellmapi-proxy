@@ -115,7 +115,7 @@ export interface CooldownInfo {
 
 const cooldowns = new Map<number, CooldownInfo>(); // keyId -> CooldownInfo
 
-export function setCooldown(platform: string, modelId: string, keyId: number, durationMs = 3600_000, errorMessage = '') {
+export function setCooldown(platform: string, modelId: string, keyId: number, durationMs = 43_200_000, errorMessage = '') {
   cooldowns.set(keyId, {
     keyId,
     platform,
