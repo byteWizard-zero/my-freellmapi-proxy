@@ -9,7 +9,22 @@ const __dirname = path.dirname(__filename);
 // Paths
 const rootDir = path.resolve(__dirname, '..');
 const dbPath = path.resolve(rootDir, 'server/data/freeapi.db');
-const parentDir = path.resolve(rootDir, '..');
+const parentDir = path.resolve(rootDir, '../..');
+
+// Excluded directories to speed up scanning and avoid node_modules/git noise
+const EXCLUDED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.next',
+  'dist',
+  'build',
+  'out',
+  'coverage',
+  '.venv',
+  'venv',
+  'env',
+  'freellmapi' // Skip the proxy itself
+]);
 
 function getUnifiedKey() {
   if (!fs.existsSync(dbPath)) {
@@ -24,49 +39,97 @@ function getUnifiedKey() {
   return row.value;
 }
 
+// Recursively find env files up to a maximum depth
+function findEnvFiles(dir, currentDepth = 1, maxDepth = 4) {
+  let results = [];
+  if (currentDepth > maxDepth) return results;
+
+  try {
+    const list = fs.readdirSync(dir);
+    for (const file of list) {
+      const fullPath = path.join(dir, file);
+      const stat = fs.statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        const baseName = path.basename(fullPath);
+        if (EXCLUDED_DIRS.has(baseName)) continue;
+        results = results.concat(findEnvFiles(fullPath, currentDepth + 1, maxDepth));
+      } else {
+        const baseName = path.basename(fullPath);
+        if (
+          baseName === '.env' ||
+          baseName === '.env.local' ||
+          baseName === '.env.development' ||
+          baseName === '.env.production'
+        ) {
+          results.push(fullPath);
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore permissions errors or read errors
+  }
+  return results;
+}
+
 function syncKeys() {
   try {
     const activeKey = getUnifiedKey();
     console.log(`\x1b[32m✔ Loaded active unified API key from database:\x1b[0m ${activeKey.slice(0, 15)}...\n`);
+    console.log(`Scanning sibling repositories under: ${parentDir}...\n`);
 
-    // Scan all directories sibling to freellmapi
-    const items = fs.readdirSync(parentDir);
+    const envFiles = findEnvFiles(parentDir);
     let updatedCount = 0;
 
-    for (const item of items) {
-      const fullPath = path.join(parentDir, item);
-      if (!fs.statSync(fullPath).isDirectory() || item === 'freellmapi') {
-        continue;
+    if (envFiles.length === 0) {
+      console.log('\x1b[31m✖ No .env or .env.local files found in sibling directories.\x1b[0m');
+      return;
+    }
+
+    console.log(`Found ${envFiles.length} env file(s). Inspecting variables...\n`);
+
+    const targets = [
+      'OPENAI_API_KEY',
+      'UNIFIED_API_KEY',
+      'PROXY_API_KEY',
+      'FREELLMAPI_KEY',
+      'PROXY_API_TOKEN',
+      'LLM_API_KEY',
+      'LLM_KEY',
+      'PROXY_TOKEN'
+    ];
+
+    for (const envPath of envFiles) {
+      const relativePath = path.relative(parentDir, envPath);
+      let content = fs.readFileSync(envPath, 'utf8');
+      let matchedVars = [];
+      let updated = false;
+
+      for (const target of targets) {
+        const regex = new RegExp(`^(${target}\\s*=\\s*).*$`, 'm');
+        if (regex.test(content)) {
+          content = content.replace(regex, `$1${activeKey}`);
+          matchedVars.push(target);
+          updated = true;
+        }
       }
 
-      const envPath = path.join(fullPath, '.env');
-      if (fs.existsSync(envPath)) {
-        let content = fs.readFileSync(envPath, 'utf8');
-        let updated = false;
-
-        // Match environment variables representing the proxy API key
-        const targets = ['OPENAI_API_KEY', 'UNIFIED_API_KEY', 'PROXY_API_KEY', 'FREELLMAPI_KEY'];
-        for (const target of targets) {
-          const regex = new RegExp(`^(${target}\\s*=\\s*).*$`, 'm');
-          if (regex.test(content)) {
-            content = content.replace(regex, `$1${activeKey}`);
-            updated = true;
-          }
-        }
-
-        if (updated) {
-          fs.writeFileSync(envPath, content, 'utf8');
-          console.log(`\x1b[36m✔ Updated .env in sibling:\x1b[0m ${item}`);
-          updatedCount++;
-        }
+      if (updated) {
+        fs.writeFileSync(envPath, content, 'utf8');
+        console.log(`\x1b[32m✔ Updated [${matchedVars.join(', ')}] in:\x1b[0m ${relativePath}`);
+        updatedCount++;
+      } else {
+        console.log(`\x1b[90mℹ No matching variables in:\x1b[0m ${relativePath}`);
       }
     }
 
+    console.log('\n------------------------------------------------');
     if (updatedCount === 0) {
-      console.log('\x1b[33m⚠ Checked sibling directories. No active .env files with matching API key variable names were found.\x1b[0m');
-      console.log('To sync a sibling repo, ensure it has a .env file with one of: OPENAI_API_KEY, UNIFIED_API_KEY, PROXY_API_KEY.');
+      console.log('\x1b[33m⚠ No matching variables were found in any scanned env files.\x1b[0m');
+      console.log('Supported variable names: ' + targets.join(', '));
+      console.log('To sync a sibling repo, add one of these variables to its env file.');
     } else {
-      console.log(`\n\x1b[32m✔ Successfully updated ${updatedCount} sibling repositories!\x1b[0m`);
+      console.log(`\x1b[32m✔ Success: Synchronized ${updatedCount} env file(s)!\x1b[0m`);
     }
 
   } catch (error) {
