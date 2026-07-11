@@ -47,6 +47,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV10(db);
   migrateModelsV11(db);
   migrateModelsV12(db);
+  migrateModelsV13(db);
   ensureUnifiedKey(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
@@ -938,6 +939,40 @@ function migrateModelsV12(db: Database.Database) {
     db.prepare('ALTER TABLE api_keys ADD COLUMN error_message TEXT').run();
     console.log('[Migration] Added error_message column to api_keys table');
   }
+}
+
+function migrateModelsV13(db: Database.Database) {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
+    ['moonshot', 'moonshot-v1-8k',   'Kimi (8k)',   5, 8, 'Large',   null, null, null, null, '~15M', 8192],
+    ['moonshot', 'moonshot-v1-32k',  'Kimi (32k)',  4, 8, 'Large',   null, null, null, null, '~15M', 32768],
+    ['moonshot', 'moonshot-v1-128k', 'Kimi (128k)', 3, 9, 'Frontier',null, null, null, null, '~15M', 131072],
+    ['moonshot', 'kimi-k2.5',        'Kimi K2.5',   3, 9, 'Frontier',null, null, null, null, '~15M', 262144],
+    ['moonshot', 'kimi-k2.6',        'Kimi K2.6',   2, 9, 'Frontier',null, null, null, null, '~15M', 262144],
+    ['moonshot', 'kimi-k2.7-code',   'Kimi K2.7 Code', 1, 9, 'Frontier',null, null, null, null, '~15M', 262144],
+  ];
+
+  const apply = db.transaction(() => {
+    for (const a of additions) insert.run(...a);
+    // Update existing rows if migration had already run with 'user-defined'
+    db.prepare(`UPDATE models SET monthly_token_budget = '~15M' WHERE platform = 'moonshot'`).run();
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC
+    `).all() as { id: number }[];
+
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  });
+  apply();
 }
 
 function ensureUnifiedKey(db: Database.Database) {

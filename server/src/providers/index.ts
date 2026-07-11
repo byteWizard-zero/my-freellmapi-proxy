@@ -84,6 +84,13 @@ register(new OpenAICompatProvider({
   baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
 }));
 
+// Moonshot AI (Kimi) - OpenAI-compatible
+register(new OpenAICompatProvider({
+  platform: 'moonshot',
+  name: 'Moonshot AI',
+  baseUrl: 'https://api.moonshot.ai/v1',
+}));
+
 // Hugging Face, Moonshot, MiniMax direct integrations were dropped in V4 —
 // HF tool-call format issues; Moonshot moved to paid; MiniMax superseded by
 // the OpenRouter route (openrouter/minimax/minimax-m2.5:free).
