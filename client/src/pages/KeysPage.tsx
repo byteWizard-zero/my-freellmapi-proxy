@@ -25,6 +25,7 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'kilo', label: 'Kilo Gateway (anon ok)' },
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
   { value: 'llm7', label: 'LLM7 (anon ok)' },
+  { value: 'moonshot', label: 'Moonshot AI (Kimi)' },
 ]
 
 const statusDot: Record<string, string> = {
@@ -53,9 +54,21 @@ interface HealthPlatform {
   unknownKeys: number
 }
 
+interface CooldownInfo {
+  keyId: number
+  platform: string
+  modelId: string
+  errorMessage: string
+  expiry: string
+  remainingSeconds: number
+  label: string
+  maskedKey: string
+}
+
 interface HealthData {
   platforms: HealthPlatform[]
   keys: { id: number; platform: string; status: string; lastCheckedAt: string | null; errorMessage?: string | null }[]
+  cooldowns: CooldownInfo[]
 }
 
 function UnifiedKeySection() {
@@ -125,6 +138,7 @@ function UnifiedKeySection() {
     </section>
   )
 }
+
 
 function parseMarkdown(text: string) {
   if (!text) return null
