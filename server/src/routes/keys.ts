@@ -141,11 +141,22 @@ keysRouter.post('/:id/troubleshoot', async (req: Request, res: Response) => {
 
   let suggestion = '';
   let routedModelInfo = '';
-  try {
-    const route = routeRequest(2000); // Route using the best available model/key
-    routedModelInfo = `${route.platform}/${route.modelId}`;
+  const skipKeys = new Set<string>();
+  let lastError: any = null;
+  const MAX_RETRIES = 10;
 
-    const prompt = `You are an AI assistant helping a developer debug an API key validation/connection error in FreeLLMAPI (a self-hosted OpenAI-compatible proxy).
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    let route: any;
+    try {
+      route = routeRequest(2000, skipKeys.size > 0 ? skipKeys : undefined);
+    } catch (routeErr: any) {
+      lastError = routeErr;
+      break;
+    }
+
+    try {
+      routedModelInfo = `${route.platform}/${route.modelId}`;
+      const prompt = `You are an AI assistant helping a developer debug an API key validation/connection error in FreeLLMAPI (a self-hosted OpenAI-compatible proxy).
 
 Platform with error: "${keyRow.platform}"
 Error message received from API: "${errorMsg}"
@@ -154,26 +165,35 @@ Please analyze this error and provide:
 1. A brief, clear explanation of what this error message means (e.g. rate limit, bad API key format, lack of credits, wrong endpoint URL).
 2. Actionable, step-by-step instructions (3-4 bullet points) to fix it. Keep it concise, developer-friendly, and formatted in clean markdown. Do not include introductory text, just jump straight to the explanation and steps.`;
 
-    const chatRes = await route.provider.chatCompletion(
-      route.apiKey,
-      [
-        { role: 'system', content: 'You are an expert API troubleshooting assistant.' },
-        { role: 'user', content: prompt }
-      ],
-      route.modelId,
-      { temperature: 0.2 }
-    );
-    suggestion = chatRes.choices[0]?.message?.content ?? 'Failed to generate AI advice.';
-  } catch (e: any) {
-    console.warn('[Troubleshoot] Could not route to an LLM to generate suggestions:', e.message);
-    
+      const chatRes = await route.provider.chatCompletion(
+        route.apiKey,
+        [
+          { role: 'system', content: 'You are an expert API troubleshooting assistant.' },
+          { role: 'user', content: prompt }
+        ],
+        route.modelId,
+        { temperature: 0.2 }
+      );
+      
+      suggestion = chatRes.choices[0]?.message?.content ?? 'Failed to generate AI advice.';
+      break;
+    } catch (chatErr: any) {
+      console.warn(`[Troubleshoot] Attempt ${attempt + 1} failed on ${route.platform}/${route.modelId}:`, chatErr.message);
+      lastError = chatErr;
+      const skipId = `${route.platform}:${route.modelId}:${route.keyId}`;
+      skipKeys.add(skipId);
+    }
+  }
+
+  if (!suggestion) {
+    console.warn('[Troubleshoot] All attempts failed to generate suggestions. Last error:', lastError?.message);
     suggestion = `### Fallback Troubleshooting (No active AI keys available to generate dynamic suggestions)
 
 **Potential issues for ${keyRow.platform}:**
 - **Wrong Key format:** Check that the key starts with the correct prefix (e.g. \`gsk_\` for Groq, \`AIzaSy\` for Google, etc.).
 - **Missing billing or expired limits:** Many free tiers require verified phone numbers or accounts in good standing.
 - **Connection Issues:** Ensure the proxy server has access to the internet and isn't blocked by a firewall.
-- **Detailed Error:** \`${errorMsg}\``;
+- **Detailed Error:** \`${errorMsg}\` (Last routing error: ${lastError?.message || 'Unknown'})`;
   }
 
   res.json({ suggestion, routedVia: routedModelInfo });

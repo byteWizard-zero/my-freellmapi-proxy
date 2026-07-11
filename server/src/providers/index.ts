@@ -40,6 +40,7 @@ register(new OpenAICompatProvider({
   platform: 'nvidia',
   name: 'NVIDIA NIM',
   baseUrl: 'https://integrate.api.nvidia.com/v1',
+  timeoutMs: 30000,
 }));
 
 // Mistral - OpenAI-compatible
@@ -58,6 +59,7 @@ register(new OpenAICompatProvider({
     'HTTP-Referer': 'http://localhost:3001',
     'X-Title': 'FreeLLMAPI',
   },
+  timeoutMs: 30000,
 }));
 
 // GitHub Models — OpenAI-compatible. Catalog uses `<publisher>/<model>` ids
