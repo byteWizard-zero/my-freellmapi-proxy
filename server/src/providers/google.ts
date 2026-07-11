@@ -166,10 +166,11 @@ function toGeminiContents(messages: ChatMessage[]) {
       }
 
       const userParts: GeminiPart[] = [];
-      if (typeof m.content === 'string') {
-        userParts.push({ text: m.content });
-      } else if (Array.isArray(m.content)) {
-        for (const item of m.content) {
+      const content = m.content as any;
+      if (typeof content === 'string') {
+        userParts.push({ text: content });
+      } else if (Array.isArray(content)) {
+        for (const item of content) {
           if (item.type === 'text' && typeof item.text === 'string') {
             userParts.push({ text: item.text });
           } else if (item.type === 'image_url' && item.image_url?.url) {
@@ -461,7 +462,7 @@ export class GoogleProvider extends BaseProvider {
       if (res.status === 401 || res.status === 403) {
         let errorMsg = `Unauthorized (${res.status})`;
         try {
-          const body = await res.json().catch(() => ({}));
+          const body = await res.json().catch(() => ({}) as any) as any;
           errorMsg = body.error?.message ?? body.message ?? errorMsg;
         } catch {
           // ignore
@@ -472,7 +473,7 @@ export class GoogleProvider extends BaseProvider {
       if (!res.ok) {
         let errorMsg = `API Error ${res.status}: ${res.statusText}`;
         try {
-          const body = await res.json().catch(() => ({}));
+          const body = await res.json().catch(() => ({}) as any) as any;
           errorMsg = body.error?.message ?? body.message ?? errorMsg;
         } catch {
           // ignore

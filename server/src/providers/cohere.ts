@@ -115,7 +115,7 @@ export class CohereProvider extends BaseProvider {
       if (res.status === 401 || res.status === 403) {
         let errorMsg = `Unauthorized (${res.status})`;
         try {
-          const body = await res.json().catch(() => ({}));
+          const body = await res.json().catch(() => ({}) as any) as any;
           errorMsg = body.error?.message ?? body.message ?? errorMsg;
         } catch {
           // ignore
@@ -126,7 +126,7 @@ export class CohereProvider extends BaseProvider {
       if (!res.ok) {
         let errorMsg = `API Error ${res.status}: ${res.statusText}`;
         try {
-          const body = await res.json().catch(() => ({}));
+          const body = await res.json().catch(() => ({}) as any) as any;
           errorMsg = body.error?.message ?? body.message ?? errorMsg;
         } catch {
           // ignore
