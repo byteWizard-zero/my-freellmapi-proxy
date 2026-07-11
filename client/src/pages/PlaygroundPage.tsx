@@ -28,12 +28,31 @@ interface ChatMessage {
 }
 
 export default function PlaygroundPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput] = useState('')
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = localStorage.getItem('freellmapi_playground_messages')
+    return saved ? JSON.parse(saved) : []
+  })
+  const [input, setInput] = useState(() => {
+    return localStorage.getItem('freellmapi_playground_input') || ''
+  })
   const [loading, setLoading] = useState(false)
-  const [selectedModel, setSelectedModel] = useState<string>('auto')
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return localStorage.getItem('freellmapi_playground_model') || 'auto'
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    localStorage.setItem('freellmapi_playground_messages', JSON.stringify(messages))
+  }, [messages])
+
+  useEffect(() => {
+    localStorage.setItem('freellmapi_playground_input', input)
+  }, [input])
+
+  useEffect(() => {
+    localStorage.setItem('freellmapi_playground_model', selectedModel)
+  }, [selectedModel])
 
   const { data: keyData } = useQuery<{ apiKey: string }>({
     queryKey: ['unified-key'],
@@ -59,6 +78,9 @@ export default function PlaygroundPage() {
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setInput('')
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
     setLoading(true)
     inputRef.current?.focus()
 
@@ -129,6 +151,10 @@ export default function PlaygroundPage() {
 
   const handleClear = () => {
     setMessages([])
+    setInput('')
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
     inputRef.current?.focus()
   }
 
