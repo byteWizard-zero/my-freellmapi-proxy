@@ -53,14 +53,28 @@ export async function checkKeyHealth(keyId: number): Promise<KeyStatus> {
   }
 }
 
-export async function checkAllKeys(): Promise<void> {
+export async function checkAllKeys(mode: 'parallel' | 'sequential' = 'sequential'): Promise<void> {
   const db = getDb();
   const keys = db.prepare('SELECT id, platform FROM api_keys WHERE enabled = 1').all() as { id: number; platform: string }[];
 
-  console.log(`[Health] Checking ${keys.length} keys...`);
+  console.log(`[Health] Checking ${keys.length} keys (${mode})...`);
 
-  for (const key of keys) {
-    await checkKeyHealth(key.id);
+  if (mode === 'parallel') {
+    await Promise.all(keys.map(async (key) => {
+      try {
+        await checkKeyHealth(key.id);
+      } catch (err: any) {
+        console.error(`[Health] Parallel check failed for key ${key.id}:`, err.message);
+      }
+    }));
+  } else {
+    for (const key of keys) {
+      try {
+        await checkKeyHealth(key.id);
+      } catch (err: any) {
+        console.error(`[Health] Sequential check failed for key ${key.id}:`, err.message);
+      }
+    }
   }
 
   console.log(`[Health] Check complete.`);

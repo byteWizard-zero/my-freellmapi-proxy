@@ -225,7 +225,8 @@ export default function KeysPage() {
   })
 
   const checkAll = useMutation({
-    mutationFn: () => apiFetch('/api/health/check-all', { method: 'POST' }),
+    mutationFn: (mode: 'sequential' | 'parallel') =>
+      apiFetch(`/api/health/check-all?mode=${mode}`, { method: 'POST' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['health'] })
       queryClient.invalidateQueries({ queryKey: ['keys'] })
@@ -287,9 +288,14 @@ export default function KeysPage() {
         description="Provider credentials and the unified API key your apps connect with."
         actions={
           keys.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => checkAll.mutate()} disabled={checkAll.isPending}>
-              {checkAll.isPending ? 'Checking…' : 'Check all'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => checkAll.mutate('sequential')} disabled={checkAll.isPending}>
+                {checkAll.isPending && checkAll.variables === 'sequential' ? 'Checking…' : 'Check one-by-one'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => checkAll.mutate('parallel')} disabled={checkAll.isPending}>
+                {checkAll.isPending && checkAll.variables === 'parallel' ? 'Checking…' : 'Check simultaneously'}
+              </Button>
+            </div>
           )
         }
       />

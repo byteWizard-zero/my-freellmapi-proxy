@@ -68,7 +68,8 @@ healthRouter.post('/check/:keyId', async (req: Request, res: Response) => {
 });
 
 // Check all keys
-healthRouter.post('/check-all', async (_req: Request, res: Response) => {
-  await checkAllKeys();
+healthRouter.post('/check-all', async (req: Request, res: Response) => {
+  const mode = req.body?.mode === 'parallel' || req.query?.mode === 'parallel' ? 'parallel' : 'sequential';
+  await checkAllKeys(mode);
   res.json({ success: true });
 });
