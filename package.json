@@ -12,7 +12,8 @@
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "test": "npm run test -w server && npm run test -w client",
     "build": "npm run build -w server && npm run build -w client",
-    "build:server": "npm run build -w server"
+    "build:server": "npm run build -w server",
+    "sync-keys": "node scripts/sync-sibling-keys.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
