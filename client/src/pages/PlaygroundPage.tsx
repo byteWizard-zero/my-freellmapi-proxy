@@ -39,6 +39,9 @@ export default function PlaygroundPage() {
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('freellmapi_playground_model') || 'auto'
   })
+  const [disableFallback, setDisableFallback] = useState(() => {
+    return localStorage.getItem('freellmapi_playground_disable_fallback') === 'true'
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -53,6 +56,10 @@ export default function PlaygroundPage() {
   useEffect(() => {
     localStorage.setItem('freellmapi_playground_model', selectedModel)
   }, [selectedModel])
+
+  useEffect(() => {
+    localStorage.setItem('freellmapi_playground_disable_fallback', String(disableFallback))
+  }, [disableFallback])
 
   const { data: keyData } = useQuery<{ apiKey: string }>({
     queryKey: ['unified-key'],
@@ -87,6 +94,7 @@ export default function PlaygroundPage() {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (keyData?.apiKey) headers['Authorization'] = `Bearer ${keyData.apiKey}`
+      if (selectedModel !== 'auto' && disableFallback) headers['X-Disable-Fallback'] = 'true'
 
       const body: any = {
         messages: newMessages.map(m => ({ role: m.role, content: m.content })),
@@ -185,6 +193,17 @@ export default function PlaygroundPage() {
                 ))}
               </SelectContent>
             </Select>
+            {selectedModel !== 'auto' && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer select-none border rounded-md px-2.5 py-1.5 bg-background transition-colors h-9">
+                <input
+                  type="checkbox"
+                  checked={disableFallback}
+                  onChange={(e) => setDisableFallback(e.target.checked)}
+                  className="rounded border-input bg-background text-primary focus:ring-ring size-3.5 cursor-pointer"
+                />
+                <span>Pin model (no fallback)</span>
+              </label>
+            )}
             {messages.length > 0 && (
               <Button variant="outline" size="sm" onClick={handleClear}>
                 Clear

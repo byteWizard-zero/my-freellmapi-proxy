@@ -130,8 +130,9 @@ export function getAllPenalties(): Array<{ modelDbId: number; count: number; pen
  * @param estimatedTokens - estimated total tokens for rate limit check
  * @param skipKeys - set of "platform:modelId:keyId" to skip (failed on this request)
  * @param preferredModelDbId - try this model first (sticky session)
+ * @param forceModel - if true, only route to preferredModelDbId and do not fall back
  */
-export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number): RouteResult {
+export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number, forceModel?: boolean): RouteResult {
   const db = getDb();
 
   // Get fallback chain ordered by priority
@@ -147,16 +148,22 @@ export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, pre
     effectivePriority: entry.priority + getPenalty(entry.model_db_id),
   })).sort((a, b) => a.effectivePriority - b.effectivePriority);
 
-  // Sticky session: move preferred model to front of chain
+  let chain = sortedChain;
+
+  // Sticky session: move preferred model to front of chain (or filter if forced)
   if (preferredModelDbId) {
-    const idx = sortedChain.findIndex(e => e.model_db_id === preferredModelDbId);
-    if (idx > 0) {
-      const [preferred] = sortedChain.splice(idx, 1);
-      sortedChain.unshift(preferred);
+    if (forceModel) {
+      chain = sortedChain.filter(e => e.model_db_id === preferredModelDbId);
+    } else {
+      const idx = sortedChain.findIndex(e => e.model_db_id === preferredModelDbId);
+      if (idx > 0) {
+        const [preferred] = sortedChain.splice(idx, 1);
+        sortedChain.unshift(preferred);
+      }
     }
   }
 
-  for (const entry of sortedChain) {
+  for (const entry of chain) {
     if (!entry.enabled) continue;
 
     // Get model details
