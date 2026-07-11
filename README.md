@@ -56,7 +56,10 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 <td align="center"><a href="https://cohere.com"><b>Cohere</b><br/>Command R+ · Command-A (trial)</a></td>
 <td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4.5 · GLM-4.7 Flash</a></td>
 <td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM (disabled by default)</a></td>
-<td align="center"><i>Adding another? See <a href="#contributing">Contributing</a>.</i></td>
+<td align="center"><a href="https://moonshot.cn"><b>Moonshot AI (Kimi)</b><br/>Kimi 8k/32k/128k · K2.5/2.6/2.7</a></td>
+</tr>
+<tr>
+<td align="center" colspan="4"><i>Adding another? See <a href="#contributing">Contributing</a>.</i></td>
 </tr>
 </table>
 
@@ -66,12 +69,15 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Streaming and non-streaming** — Server-Sent Events for `stream: true`, JSON response otherwise. Every provider adapter implements both.
 - **Tool calling** — OpenAI-style `tools` / `tool_choice` requests are passed through, and assistant `tool_calls` + `tool` role follow-up messages round-trip across providers.
 - **Automatic fallover** — If the chosen provider returns a 429, 5xx, or times out, the router skips it, puts the key on a short cooldown, and retries on the next model in your fallback chain (up to 20 attempts).
+- **Global Key Cooldowns** — If an API key encounters an error or hits rate limits on any model, it goes on a global cooldown for **1 hour** across all models using that key to avoid redundant fallback loops.
 - **Per-key rate tracking** — RPM, RPD, TPM, and TPD counters per `(platform, model, key)` so the router always picks a key that's under its caps.
 - **Sticky sessions** — Multi-turn conversations keep talking to the same model for 30 minutes to avoid the hallucination spike that comes from mid-conversation model switches.
 - **Encrypted key storage** — API keys are encrypted with AES-256-GCM before hitting SQLite; decryption happens in-memory just before a request.
 - **Unified API key** — Clients authenticate to your proxy with a single `freellmapi-…` bearer token. You never expose upstream provider keys to your apps.
 - **Health checks** — Periodic probes mark keys as `healthy`, `rate_limited`, `invalid`, or `error` so the router skips dead ones automatically.
-- **Admin dashboard** — React + Vite UI to manage keys, reorder the fallback chain, inspect analytics, and run prompts in a playground. Dark mode included.
+- **Admin dashboard** — React + Vite UI to manage keys, reorder the fallback chain, inspect analytics, and run prompts in a playground. Dynamic dark mode and Slate-Emerald developer theme included.
+- **Dedicated Cooldowns Page** — Real-time tracking of sleeping keys in a separate tab in the navbar. It displays the platform, masked credentials, triggering model, exact error log, and active second-by-second countdown.
+- **Automatic Sibling Sync** — A helper CLI tool (`npm run sync-keys`) to scan adjacent repositories recursively and update their unified API key in `.env` configurations automatically.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
 - **Deploys to a Raspberry Pi** — Runs happily on a Pi 4 under PM2 behind nginx. ~40 MB RSS at idle.
 
@@ -115,6 +121,16 @@ For a production build:
 npm run build
 node server/dist/index.js     # server + dashboard both served on :3001
 ```
+
+### Syncing Sibling Repositories (Optional)
+
+If you have sibling coding folders on your machine that consume this proxy, you can automatically write the active unified API key directly to their configurations:
+1. Ensure your sibling repositories have a `.env` or `.env.local` containing one of the standard key variables (e.g. `OPENAI_API_KEY`, `UNIFIED_API_KEY`).
+2. Run the sync command:
+   ```bash
+   npm run sync-keys
+   ```
+   This tool scans all adjacent workspace folders recursively (up to depth 4), updates the placeholders with your active unified API key, and prints matching diagnostics.
 
 ## Using the API
 
@@ -318,10 +334,11 @@ A self-hosted, single-user, personal-use setup was re-reviewed against each prov
 | Zhipu (open.bigmodel.cn) | ✅ Likely OK | Personal/non-commercial research carve-out still in the platform docs. |
 | Z.ai (api.z.ai) | ⚠️ Caution | New row — Singapore entity (distinct from Zhipu CN). §III.3(l) anti-traffic-redirect clause could plausibly be read against a proxy; no explicit personal-use carve-out. |
 | Ollama Cloud | ✅ Likely OK | New row — Free plan permits cloud-model access (1 concurrent, 5-hour session caps). No anti-proxy / anti-resale clauses found. *(Integration tracked in #14.)* |
+| Moonshot AI (Kimi) | ✅ Likely OK | Direct global API endpoint (`api.moonshot.ai/v1`) supported. |
 
 Rules of thumb that keep most providers happy: **one account per provider**, **no reselling**, **no sharing your endpoint with other humans**, **don't hammer a free tier as a paid production backend**. This is informational, not legal advice — read each provider's ToS and make your own call.
 
-Removed since the April 2026 review: Hugging Face, Moonshot, and MiniMax direct integrations were dropped from the catalog (HF — tool-call format issues; Moonshot — moved to paid only; MiniMax — superseded by the OpenRouter `minimax/minimax-m2.5:free` route).
+Removed since the April 2026 review: Hugging Face and MiniMax direct integrations were dropped from the catalog (HF — tool-call format issues; MiniMax — superseded by the OpenRouter `minimax/minimax-m2.5:free` route).
 
 ## Disclaimer
 
