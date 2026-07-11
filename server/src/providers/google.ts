@@ -25,6 +25,10 @@ interface GeminiPart {
     name?: string;
     response?: unknown;
   };
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
 }
 
 interface GeminiCandidate {
@@ -161,9 +165,31 @@ function toGeminiContents(messages: ChatMessage[]) {
         };
       }
 
+      const userParts: GeminiPart[] = [];
+      if (typeof m.content === 'string') {
+        userParts.push({ text: m.content });
+      } else if (Array.isArray(m.content)) {
+        for (const item of m.content) {
+          if (item.type === 'text' && typeof item.text === 'string') {
+            userParts.push({ text: item.text });
+          } else if (item.type === 'image_url' && item.image_url?.url) {
+            const url = item.image_url.url;
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              userParts.push({
+                inlineData: {
+                  mimeType: match[1],
+                  data: match[2],
+                },
+              });
+            }
+          }
+        }
+      }
+
       return {
         role: 'user',
-        parts: [{ text: typeof m.content === 'string' ? m.content : '' }],
+        parts: userParts,
       };
     })
     .filter((entry): entry is { role: 'user' | 'model'; parts: GeminiPart[] } => entry !== null);
