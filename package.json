@@ -13,6 +13,7 @@
     "test": "npm run test -w server && npm run test -w client",
     "build": "npm run build -w server && npm run build -w client",
     "build:server": "npm run build -w server",
+    "start": "npm run start -w server",
     "sync-keys": "node scripts/sync-sibling-keys.js"
   },
   "devDependencies": {

@@ -18,7 +18,7 @@ export function getDb(): Database.Database {
 }
 
 export function initDb(dbPath?: string): Database.Database {
-  const resolvedPath = dbPath ?? DB_PATH;
+  const resolvedPath = dbPath ?? process.env.DB_PATH ?? DB_PATH;
   const isMemory = resolvedPath === ':memory:';
 
   if (!isMemory) {
