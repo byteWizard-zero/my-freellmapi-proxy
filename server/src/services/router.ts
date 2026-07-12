@@ -132,7 +132,13 @@ export function getAllPenalties(): Array<{ modelDbId: number; count: number; pen
  * @param preferredModelDbId - try this model first (sticky session)
  * @param forceModel - if true, only route to preferredModelDbId and do not fall back
  */
-export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number, forceModel?: boolean): RouteResult {
+export function routeRequest(
+  estimatedTokens = 1000,
+  skipKeys?: Set<string>,
+  preferredModelDbId?: number,
+  forceModel?: boolean,
+  hasImage?: boolean,
+): RouteResult {
   const db = getDb();
 
   // Get fallback chain ordered by priority
@@ -169,6 +175,12 @@ export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, pre
     // Get model details
     const model = db.prepare('SELECT * FROM models WHERE id = ? AND enabled = 1').get(entry.model_db_id) as ModelRow | undefined;
     if (!model) continue;
+
+    // If request contains an image, restrict to vision-capable models
+    if (hasImage) {
+      const isVisionCapable = model.platform === 'google' || model.model_id === 'gpt-4o';
+      if (!isVisionCapable) continue;
+    }
 
     // Check if we have a provider for this platform
     const provider = getProvider(model.platform as any);

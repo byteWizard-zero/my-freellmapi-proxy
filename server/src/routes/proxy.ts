@@ -106,9 +106,25 @@ const systemMessageSchema = z.object({
   name: z.string().optional(),
 });
 
+const contentPartSchema = z.union([
+  z.object({
+    type: z.literal('text'),
+    text: z.string(),
+  }),
+  z.object({
+    type: z.literal('image_url'),
+    image_url: z.object({
+      url: z.string(),
+    }),
+  }),
+]);
+
 const userMessageSchema = z.object({
   role: z.literal('user'),
-  content: z.string(),
+  content: z.union([
+    z.string(),
+    z.array(contentPartSchema),
+  ]),
   name: z.string().optional(),
 });
 
@@ -167,6 +183,10 @@ const chatCompletionSchema = z.object({
   tools: z.array(toolDefinitionSchema).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
+  response_format: z.object({
+    type: z.enum(['text', 'json_object', 'json_schema']),
+    json_schema: z.record(z.string(), z.unknown()).optional(),
+  }).optional(),
 });
 
 function isRetryableError(err: any): boolean {
@@ -237,7 +257,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { model: requestedModel, temperature, max_tokens, top_p, stream, tools, tool_choice, parallel_tool_calls } = parsed.data;
+  const { model: requestedModel, temperature, max_tokens, top_p, stream, tools, tool_choice, parallel_tool_calls, response_format } = parsed.data;
   const messages: ChatMessage[] = parsed.data.messages.map((m): ChatMessage => {
     if (m.role === 'assistant') {
       return {
@@ -288,20 +308,34 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   let preferredModel: number | undefined;
   if (requestedModel) {
     const db = getDb();
-    const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number } | undefined;
-    if (enabled) {
-      preferredModel = enabled.id;
+    const modelRow = db.prepare('SELECT id, platform FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number; platform: string } | undefined;
+
+    let hasKeys = false;
+    if (modelRow) {
+      const keysCount = db.prepare('SELECT COUNT(*) as count FROM api_keys WHERE platform = ? AND enabled = 1 AND status != ?')
+        .get(modelRow.platform, 'invalid') as { count: number } | undefined;
+      hasKeys = (keysCount?.count ?? 0) > 0;
+    }
+
+    if (modelRow && hasKeys) {
+      preferredModel = modelRow.id;
     } else {
-      const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(requestedModel) as { id: number } | undefined;
-      const reason = disabled ? 'is disabled' : 'is not in the catalog';
-      res.status(400).json({
-        error: {
-          message: `Model '${requestedModel}' ${reason}. Omit the 'model' field to auto-route, or call /v1/models for the available list.`,
-          type: 'invalid_request_error',
-          code: 'model_not_found',
-        },
-      });
-      return;
+      const isStandardOpenAiModel = requestedModel.startsWith('gpt-') || requestedModel.startsWith('o1-') || requestedModel.startsWith('o3-');
+      if (isStandardOpenAiModel) {
+        console.warn(`[Proxy] Model '${requestedModel}' is not available (either not in catalog or lacks configured keys). Auto-routing to best available alternative.`);
+        preferredModel = undefined;
+      } else {
+        const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(requestedModel) as { id: number } | undefined;
+        const reason = disabled ? 'is disabled' : 'is not in the catalog';
+        res.status(400).json({
+          error: {
+            message: `Model '${requestedModel}' ${reason}. Omit the 'model' field to auto-route, or call /v1/models for the available list.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
     }
   } else {
     preferredModel = getStickyModel(messages);
@@ -312,10 +346,12 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   let lastError: any = null;
   const forceModel = disableFallback && !!requestedModel;
 
+  const hasImage = messages.some(m => Array.isArray(m.content) && m.content.some(part => part.type === 'image_url'));
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     let route: RouteResult;
     try {
-      route = routeRequest(estimatedTotal, skipKeys.size > 0 ? skipKeys : undefined, preferredModel, forceModel);
+      route = routeRequest(estimatedTotal, skipKeys.size > 0 ? skipKeys : undefined, preferredModel, forceModel, hasImage);
     } catch (err: any) {
       // No more models available
       if (lastError) {
@@ -345,7 +381,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         try {
           const gen = route.provider.streamChatCompletion(
             route.apiKey, messages, route.modelId,
-            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls },
+            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, response_format },
           );
 
           for await (const chunk of gen) {
@@ -400,7 +436,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       } else {
         const result = await route.provider.chatCompletion(
           route.apiKey, messages, route.modelId,
-          { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls },
+          { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, response_format },
         );
 
         const totalTokens = result.usage?.total_tokens ?? 0;

@@ -1,4 +1,7 @@
 import './env.js';
+import { startLogging } from './services/logger.js';
+startLogging();
+
 import { createApp } from './app.js';
 import { initDb } from './db/index.js';
 import { startHealthChecker } from './services/health.js';

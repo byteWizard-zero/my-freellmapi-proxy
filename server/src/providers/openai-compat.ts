@@ -60,6 +60,7 @@ export class OpenAICompatProvider extends BaseProvider {
         tools: options?.tools,
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,
+        response_format: options?.response_format,
       }),
     }, this.timeoutMs);
 
@@ -96,6 +97,7 @@ export class OpenAICompatProvider extends BaseProvider {
         tools: options?.tools,
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,
+        response_format: options?.response_format,
         stream: true,
       }),
     }, this.timeoutMs);

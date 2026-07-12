@@ -7,6 +7,7 @@ import PlaygroundPage from '@/pages/PlaygroundPage'
 import FallbackPage from '@/pages/FallbackPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
 import CooldownsPage from '@/pages/CooldownsPage'
+import LogsPage from '@/pages/LogsPage'
 
 const queryClient = new QueryClient()
 
@@ -81,6 +82,7 @@ function App() {
                 <NavItem to="/cooldowns">Cooldowns</NavItem>
                 <NavItem to="/fallback">Fallback</NavItem>
                 <NavItem to="/analytics">Analytics</NavItem>
+                <NavItem to="/logs">Live Logs</NavItem>
               </nav>
               <div className="ml-auto py-2">
                 <DarkModeToggle />
@@ -95,6 +97,7 @@ function App() {
               <Route path="/cooldowns" element={<CooldownsPage />} />
               <Route path="/fallback" element={<FallbackPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/logs" element={<LogsPage />} />
               <Route path="/test" element={<Navigate to="/playground" replace />} />
               <Route path="/health" element={<Navigate to="/keys" replace />} />
             </Routes>
