@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initEncryptionKey } from '../lib/crypto.js';
+import { initEncryptionKey, encrypt } from '../lib/crypto.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
@@ -48,10 +48,59 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV11(db);
   migrateModelsV12(db);
   migrateModelsV13(db);
+  seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
   return db;
+}
+
+function seedApiKeysFromEnv(db: Database.Database) {
+  const envMap: Record<string, string> = {
+    GOOGLE_API_KEY: 'google',
+    GEMINI_API_KEY: 'google',
+    GROQ_API_KEY: 'groq',
+    CEREBRAS_API_KEY: 'cerebras',
+    SAMBANOVA_API_KEY: 'sambanova',
+    NVIDIA_API_KEY: 'nvidia',
+    MISTRAL_API_KEY: 'mistral',
+    OPENROUTER_API_KEY: 'openrouter',
+    GITHUB_TOKEN: 'github',
+    GITHUB_API_KEY: 'github',
+    COHERE_API_KEY: 'cohere',
+    CLOUDFLARE_API_KEY: 'cloudflare',
+    ZHIPU_API_KEY: 'zhipu',
+    OLLAMA_API_KEY: 'ollama',
+    KILO_API_KEY: 'kilo',
+    POLLINATIONS_API_KEY: 'pollinations',
+    LLM7_API_KEY: 'llm7',
+    MOONSHOT_API_KEY: 'moonshot',
+  };
+
+  const insertStmt = db.prepare(`
+    INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
+    VALUES (?, ?, ?, ?, ?, 'unknown', 1)
+  `);
+
+  const checkStmt = db.prepare(`
+    SELECT COUNT(*) as count FROM api_keys WHERE platform = ?
+  `);
+
+  for (const [envVar, platform] of Object.entries(envMap)) {
+    const keyVal = process.env[envVar];
+    if (keyVal && keyVal.trim()) {
+      const { count } = checkStmt.get(platform) as { count: number };
+      if (count === 0) {
+        try {
+          const { encrypted, iv, authTag } = encrypt(keyVal.trim());
+          insertStmt.run(platform, `Env:${envVar}`, encrypted, iv, authTag);
+          console.log(`[Seed] Seeded API key for platform '${platform}' from env var '${envVar}'`);
+        } catch (e: any) {
+          console.error(`[Seed] Failed to seed key for ${platform}:`, e.message);
+        }
+      }
+    }
+  }
 }
 
 function createTables(db: Database.Database) {
