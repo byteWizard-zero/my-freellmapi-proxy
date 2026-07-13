@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initEncryptionKey, encrypt } from '../lib/crypto.js';
+import { initEncryptionKey, encrypt, decrypt } from '../lib/crypto.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
@@ -56,7 +56,7 @@ export function initDb(dbPath?: string): Database.Database {
 }
 
 function seedApiKeysFromEnv(db: Database.Database) {
-  const envMap: Record<string, string> = {
+  const platformPrefixes: Record<string, string> = {
     GOOGLE_API_KEY: 'google',
     GEMINI_API_KEY: 'google',
     GROQ_API_KEY: 'groq',
@@ -82,21 +82,37 @@ function seedApiKeysFromEnv(db: Database.Database) {
     VALUES (?, ?, ?, ?, ?, 'unknown', 1)
   `);
 
-  const checkStmt = db.prepare(`
-    SELECT COUNT(*) as count FROM api_keys WHERE platform = ?
-  `);
+  const checkKeyExists = (platform: string, newKeyVal: string): boolean => {
+    const rows = db.prepare('SELECT encrypted_key, iv, auth_tag FROM api_keys WHERE platform = ?').all(platform) as any[];
+    for (const row of rows) {
+      try {
+        const decrypted = decrypt(row.encrypted_key, row.iv, row.auth_tag);
+        if (decrypted === newKeyVal) return true;
+      } catch {
+        // ignore decryption failures
+      }
+    }
+    return false;
+  };
 
-  for (const [envVar, platform] of Object.entries(envMap)) {
-    const keyVal = process.env[envVar];
-    if (keyVal && keyVal.trim()) {
-      const { count } = checkStmt.get(platform) as { count: number };
-      if (count === 0) {
-        try {
-          const { encrypted, iv, authTag } = encrypt(keyVal.trim());
-          insertStmt.run(platform, `Env:${envVar}`, encrypted, iv, authTag);
-          console.log(`[Seed] Seeded API key for platform '${platform}' from env var '${envVar}'`);
-        } catch (e: any) {
-          console.error(`[Seed] Failed to seed key for ${platform}:`, e.message);
+  for (const envVar of Object.keys(process.env)) {
+    const matchingPrefix = Object.keys(platformPrefixes).find(prefix => 
+      envVar === prefix || envVar.startsWith(prefix + '_')
+    );
+
+    if (matchingPrefix) {
+      const platform = platformPrefixes[matchingPrefix];
+      const keyVal = process.env[envVar];
+      if (keyVal && keyVal.trim()) {
+        const trimmed = keyVal.trim();
+        if (!checkKeyExists(platform, trimmed)) {
+          try {
+            const { encrypted, iv, authTag } = encrypt(trimmed);
+            insertStmt.run(platform, `Env:${envVar}`, encrypted, iv, authTag);
+            console.log(`[Seed] Seeded API key for platform '${platform}' from env var '${envVar}'`);
+          } catch (e: any) {
+            console.error(`[Seed] Failed to seed key for ${platform} from ${envVar}:`, e.message);
+          }
         }
       }
     }
