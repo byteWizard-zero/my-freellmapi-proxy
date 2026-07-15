@@ -75,16 +75,29 @@ function setStickyModel(messages: ChatMessage[], modelDbId: number) {
 proxyRouter.get('/models', (_req: Request, res: Response) => {
   const db = getDb();
   const models = db.prepare('SELECT platform, model_id, display_name, context_window FROM models WHERE enabled = 1 ORDER BY intelligence_rank').all() as any[];
-  res.json({
-    object: 'list',
-    data: models.map(m => ({
+  
+  const list = [
+    {
+      id: 'auto',
+      object: 'model',
+      created: 0,
+      owned_by: 'proxy',
+      name: '🤖 Auto-Route (Proxy Fallback)',
+      context_window: 131072,
+    },
+    ...models.map(m => ({
       id: m.model_id,
       object: 'model',
       created: 0,
       owned_by: m.platform,
       name: m.display_name,
       context_window: m.context_window,
-    })),
+    }))
+  ];
+
+  res.json({
+    object: 'list',
+    data: list,
   });
 });
 
@@ -306,7 +319,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   // different model would be surprising to OpenAI-compatible clients.
   // Sticky-session is the fallback when no `model` field was sent at all.
   let preferredModel: number | undefined;
-  if (requestedModel) {
+  if (requestedModel && requestedModel !== 'auto') {
     const db = getDb();
     const modelRow = db.prepare('SELECT id, platform FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number; platform: string } | undefined;
 
