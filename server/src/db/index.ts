@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initEncryptionKey, encrypt, decrypt } from '../lib/crypto.js';
+import { saveUnifiedKeyToEnv } from '../env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
@@ -1040,24 +1041,41 @@ function migrateModelsV13(db: Database.Database) {
   apply();
 }
 
+
+
 function ensureUnifiedKey(db: Database.Database) {
-  const existing = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string } | undefined;
-  if (!existing) {
-    const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
-    db.prepare("INSERT INTO settings (key, value) VALUES ('unified_api_key', ?)").run(key);
-    console.log(`\n  Your unified API key: ${key}\n`);
+  if (process.env.UNIFIED_API_KEY?.trim()) {
+    const envKey = process.env.UNIFIED_API_KEY.trim();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('unified_api_key', ?)").run(envKey);
+    console.log(`\n  Using unified API key from UNIFIED_API_KEY env var.\n`);
+    return;
   }
+
+  const existing = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string } | undefined;
+  if (existing?.value) {
+    saveUnifiedKeyToEnv(existing.value);
+    return;
+  }
+
+  const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
+  db.prepare("INSERT INTO settings (key, value) VALUES ('unified_api_key', ?)").run(key);
+  saveUnifiedKeyToEnv(key);
+  console.log(`\n  Your unified API key: ${key}\n`);
 }
 
 export function getUnifiedApiKey(): string {
+  if (process.env.UNIFIED_API_KEY?.trim()) {
+    return process.env.UNIFIED_API_KEY.trim();
+  }
   const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string };
-  return row.value;
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get() as { value: string } | undefined;
+  return row?.value || '';
 }
 
 export function regenerateUnifiedKey(): string {
   const db = getDb();
   const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
-  db.prepare("UPDATE settings SET value = ? WHERE key = 'unified_api_key'").run(key);
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('unified_api_key', ?)").run(key);
+  saveUnifiedKeyToEnv(key);
   return key;
 }

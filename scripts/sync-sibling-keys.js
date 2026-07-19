@@ -23,8 +23,12 @@ const EXCLUDED_DIRS = new Set([
   '.venv',
   'venv',
   'env',
-  'freellmapi' // Skip the proxy itself
 ]);
+
+function isSubdirectory(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
 
 function getUnifiedKey() {
   if (!fs.existsSync(dbPath)) {
@@ -53,6 +57,7 @@ function findEnvFiles(dir, currentDepth = 1, maxDepth = 4) {
       if (stat.isDirectory()) {
         const baseName = path.basename(fullPath);
         if (EXCLUDED_DIRS.has(baseName)) continue;
+        if (isSubdirectory(rootDir, fullPath)) continue;
         results = results.concat(findEnvFiles(fullPath, currentDepth + 1, maxDepth));
       } else {
         const baseName = path.basename(fullPath);
