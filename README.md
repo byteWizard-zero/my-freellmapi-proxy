@@ -113,7 +113,7 @@ echo "ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).to
 npm run dev
 ```
 
-Open http://localhost:5173 (the Vite dev UI), add your provider keys on the **Keys** page, reorder the **Fallback Chain** to taste, and grab your unified API key from the **Keys** page header. That unified key is what you point your OpenAI SDK at.
+Open **http://localhost:5173** (the Vite dev UI), add your provider keys on the **Keys** page, reorder the **Fallback Chain** to taste, and grab your unified API key from the **Keys** page. That unified key (`freellmapi-...`) is what you point your OpenAI SDK at.
 
 For a production build:
 
@@ -122,15 +122,25 @@ npm run build
 node server/dist/index.js     # server + dashboard both served on :3001
 ```
 
+### Key Persistence & Cloud Deployment
+
+- **Automatic Local Persistence**: On first run, a unified key is generated and saved into `.env` as `UNIFIED_API_KEY=freellmapi-...`. It automatically persists across server restarts and cold starts.
+- **Cloud & Container Hosting (Render, Railway, Docker, Fly.io)**: On stateless container platforms where `.env` files are not committed to git, set the environment variable in your cloud platform dashboard:
+  ```env
+  UNIFIED_API_KEY=freellmapi-your-fixed-secret-key
+  ```
+  This ensures your proxy endpoint always uses the same key across container redeployments and cold starts.
+- **Dashboard Display**: The React UI automatically fetches and displays the active key from the server. You don't need to manually configure anything inside the React UI.
+
 ### Syncing Sibling Repositories (Optional)
 
-If you have sibling coding folders on your machine that consume this proxy, you can automatically write the active unified API key directly to their configurations:
-1. Ensure your sibling repositories have a `.env` or `.env.local` containing one of the standard key variables (e.g. `OPENAI_API_KEY`, `UNIFIED_API_KEY`).
+If you have sibling coding projects on your machine that consume this proxy, you can automatically write the active unified API key directly to their `.env` files:
+1. Ensure your sibling repositories have a `.env` or `.env.local` containing one of the standard key variables (e.g. `OPENAI_API_KEY`, `UNIFIED_API_KEY`, `PROXY_API_KEY`).
 2. Run the sync command:
    ```bash
    npm run sync-keys
    ```
-   This tool scans all adjacent workspace folders recursively (up to depth 4), updates the placeholders with your active unified API key, and prints matching diagnostics.
+   This tool scans all adjacent workspace folders recursively (up to depth 4), updates matching placeholders with your active unified API key, and prints diagnostics.
 
 ## Using the API
 
