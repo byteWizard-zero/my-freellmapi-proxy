@@ -6,8 +6,10 @@ import type { ChatMessage } from '@freellmapi/shared/types.js';
 import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
+import { WebSearchService } from '../services/websearch.js';
 
 export const proxyRouter = Router();
+
 
 // Constant-time string comparison for the unified API key. Plain `===` leaks
 // length and per-character timing, which a network attacker could in principle
@@ -181,6 +183,13 @@ const toolChoiceSchema = z.union([
   }),
 ]);
 
+const webSearchSchema = z.union([
+  z.boolean(),
+  z.object({
+    max_results: z.number().int().positive().optional(),
+  }),
+]);
+
 const chatCompletionSchema = z.object({
   messages: z.array(z.union([
     systemMessageSchema,
@@ -196,11 +205,14 @@ const chatCompletionSchema = z.object({
   tools: z.array(toolDefinitionSchema).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
+  web_search: webSearchSchema.optional(),
+  search: z.boolean().optional(),
   response_format: z.object({
     type: z.enum(['text', 'json_object', 'json_schema']),
     json_schema: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
 });
+
 
 function isRetryableError(err: any): boolean {
   const msg = (err.message ?? '').toLowerCase();
@@ -302,7 +314,31 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     };
   });
 
+  const isWebSearchRequested = Boolean(
+    parsed.data.web_search ||
+    parsed.data.search ||
+    req.headers['x-web-search'] === 'true'
+  );
+
+  let searchExecuted = false;
+  if (isWebSearchRequested) {
+    const query = WebSearchService.extractQuery(messages);
+    if (query) {
+      const maxResults = typeof parsed.data.web_search === 'object' && parsed.data.web_search?.max_results
+        ? parsed.data.web_search.max_results
+        : 5;
+      const searchResults = await WebSearchService.search(query, { maxResults });
+      const searchMarkdown = WebSearchService.formatResultsToMarkdown(query, searchResults);
+      messages.unshift({
+        role: 'system',
+        content: searchMarkdown,
+      });
+      searchExecuted = true;
+    }
+  }
+
   // Token estimation is intentionally a heuristic (~4 chars per token). Used
+
   // for routing decisions (skip a model whose budget is too small) and for
   // streaming bookkeeping where the provider doesn't echo a final usage count.
   // Non-streaming requests reconcile against the provider's real `usage` block
@@ -394,7 +430,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         try {
           const gen = route.provider.streamChatCompletion(
             route.apiKey, messages, route.modelId,
-            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, response_format },
+            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
           );
 
           for await (const chunk of gen) {
@@ -403,6 +439,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
               res.setHeader('Cache-Control', 'no-cache');
               res.setHeader('Connection', 'keep-alive');
               res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
+              if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
               if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
               streamStarted = true;
             }
@@ -415,6 +452,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
             // Upstream returned no chunks — emit minimal successful stream.
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
+            if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
           }
           res.write('data: [DONE]\n\n');
           res.end();
@@ -449,7 +487,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       } else {
         const result = await route.provider.chatCompletion(
           route.apiKey, messages, route.modelId,
-          { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, response_format },
+          { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
         );
 
         const totalTokens = result.usage?.total_tokens ?? 0;
@@ -464,8 +502,10 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         }
 
         res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
+        if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
         res.json(result);
+
 
         logRequest(
           route.platform, route.modelId, 'success',

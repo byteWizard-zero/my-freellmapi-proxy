@@ -72,17 +72,28 @@ function toGeminiFinishReason(finishReason?: string): string {
   return 'stop';
 }
 
-function toGeminiTools(tools?: ChatToolDefinition[]): Array<{ functionDeclarations: Array<Record<string, unknown>> }> | undefined {
-  if (!tools || tools.length === 0) return undefined;
+function toGeminiTools(tools?: ChatToolDefinition[], webSearch?: boolean): Array<Record<string, unknown>> | undefined {
+  const result: Array<Record<string, unknown>> = [];
 
-  return [{
-    functionDeclarations: tools.map(t => ({
-      name: t.function.name,
-      description: t.function.description,
-      parameters: t.function.parameters,
-    })),
-  }];
+  if (tools && tools.length > 0) {
+    result.push({
+      functionDeclarations: tools.map(t => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters,
+      })),
+    });
+  }
+
+  if (webSearch) {
+    result.push({
+      googleSearch: {},
+    });
+  }
+
+  return result.length > 0 ? result : undefined;
 }
+
 
 function toGeminiToolConfig(toolChoice?: ChatToolChoice): { functionCallingConfig: Record<string, unknown> } | undefined {
   if (!toolChoice) return undefined;
@@ -260,7 +271,7 @@ export class GoogleProvider extends BaseProvider {
         topP: options?.top_p,
         responseMimeType: options?.response_format?.type === 'json_object' ? 'application/json' : undefined,
       },
-      tools: toGeminiTools(options?.tools),
+      tools: toGeminiTools(options?.tools, options?.web_search),
       toolConfig: toGeminiToolConfig(options?.tool_choice),
     };
     if (systemInstruction) body.systemInstruction = systemInstruction;
@@ -324,7 +335,7 @@ export class GoogleProvider extends BaseProvider {
         topP: options?.top_p,
         responseMimeType: options?.response_format?.type === 'json_object' ? 'application/json' : undefined,
       },
-      tools: toGeminiTools(options?.tools),
+      tools: toGeminiTools(options?.tools, options?.web_search),
       toolConfig: toGeminiToolConfig(options?.tool_choice),
     };
     if (systemInstruction) body.systemInstruction = systemInstruction;

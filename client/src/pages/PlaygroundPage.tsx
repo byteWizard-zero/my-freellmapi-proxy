@@ -24,6 +24,7 @@ interface ChatMessage {
     model?: string
     latency?: number
     fallbackAttempts?: number
+    webSearchExecuted?: boolean
   }
 }
 
@@ -41,6 +42,9 @@ export default function PlaygroundPage() {
   })
   const [disableFallback, setDisableFallback] = useState(() => {
     return localStorage.getItem('freellmapi_playground_disable_fallback') === 'true'
+  })
+  const [enableWebSearch, setEnableWebSearch] = useState(() => {
+    return localStorage.getItem('freellmapi_playground_web_search') === 'true'
   })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -60,6 +64,11 @@ export default function PlaygroundPage() {
   useEffect(() => {
     localStorage.setItem('freellmapi_playground_disable_fallback', String(disableFallback))
   }, [disableFallback])
+
+  useEffect(() => {
+    localStorage.setItem('freellmapi_playground_web_search', String(enableWebSearch))
+  }, [enableWebSearch])
+
 
   const { data: keyData } = useQuery<{ apiKey: string }>({
     queryKey: ['unified-key'],
@@ -100,6 +109,7 @@ export default function PlaygroundPage() {
         messages: newMessages.map(m => ({ role: m.role, content: m.content })),
       }
       if (selectedModel !== 'auto') body.model = selectedModel
+      if (enableWebSearch) body.web_search = true
 
       const base = import.meta.env.BASE_URL.replace(/\/$/, '')
       const start = Date.now()
@@ -111,6 +121,7 @@ export default function PlaygroundPage() {
 
       const latency = Date.now() - start
       const routedVia = res.headers.get('X-Routed-Via')
+      const webSearchHeader = res.headers.get('X-Web-Search')
       const fallbackAttempts = res.headers.get('X-Fallback-Attempts')
 
       if (!res.ok) {
@@ -137,6 +148,7 @@ export default function PlaygroundPage() {
           model: via?.model,
           latency,
           fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
+          webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
         },
       }])
     } catch (err: any) {
@@ -178,7 +190,7 @@ export default function PlaygroundPage() {
         actions={
           <>
             <Select value={selectedModel} onValueChange={(v) => setSelectedModel(v ?? 'auto')}>
-              <SelectTrigger className="w-[260px]">
+              <SelectTrigger className="w-[240px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -193,6 +205,17 @@ export default function PlaygroundPage() {
                 ))}
               </SelectContent>
             </Select>
+            <label className={`flex items-center gap-1.5 text-xs cursor-pointer select-none border rounded-md px-2.5 py-1.5 transition-colors h-9 ${
+              enableWebSearch ? 'bg-primary/10 border-primary/40 text-primary font-medium' : 'bg-background text-muted-foreground hover:text-foreground'
+            }`}>
+              <input
+                type="checkbox"
+                checked={enableWebSearch}
+                onChange={(e) => setEnableWebSearch(e.target.checked)}
+                className="rounded border-input bg-background text-primary focus:ring-ring size-3.5 cursor-pointer"
+              />
+              <span>🌐 Web Search</span>
+            </label>
             {selectedModel !== 'auto' && (
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer select-none border rounded-md px-2.5 py-1.5 bg-background transition-colors h-9">
                 <input
@@ -201,7 +224,7 @@ export default function PlaygroundPage() {
                   onChange={(e) => setDisableFallback(e.target.checked)}
                   className="rounded border-input bg-background text-primary focus:ring-ring size-3.5 cursor-pointer"
                 />
-                <span>Pin model (no fallback)</span>
+                <span>Pin model</span>
               </label>
             )}
             {messages.length > 0 && (
@@ -241,6 +264,7 @@ export default function PlaygroundPage() {
                         {msg.meta.platform && <span>{msg.meta.platform}</span>}
                         {msg.meta.model && <span className="font-mono">· {msg.meta.model}</span>}
                         {msg.meta.latency != null && <span>· {msg.meta.latency} ms</span>}
+                        {msg.meta.webSearchExecuted && <span className="text-emerald-500 font-medium">· 🌐 Grounded</span>}
                         {msg.meta.fallbackAttempts != null && msg.meta.fallbackAttempts > 0 && (
                           <span>· {msg.meta.fallbackAttempts} fallback{msg.meta.fallbackAttempts > 1 ? 's' : ''}</span>
                         )}
@@ -249,6 +273,7 @@ export default function PlaygroundPage() {
                   </div>
                 </div>
               ))}
+
               {loading && (
                 <div className="flex justify-start">
                   <div className="bg-muted rounded-2xl px-4 py-3">

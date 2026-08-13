@@ -15,11 +15,13 @@ export interface CompletionOptions {
   tools?: ChatToolDefinition[];
   tool_choice?: ChatToolChoice;
   parallel_tool_calls?: boolean;
+  web_search?: boolean;
   response_format?: {
     type: 'text' | 'json_object' | 'json_schema';
     json_schema?: Record<string, unknown>;
   };
 }
+
 
 export abstract class BaseProvider {
   abstract readonly platform: Platform;

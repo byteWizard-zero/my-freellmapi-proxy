@@ -116,6 +116,12 @@ export interface ChatMessage {
   tool_calls?: ChatToolCall[];
 }
 
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
 export interface ChatCompletionRequest {
   model?: string;
   messages: ChatMessage[];
@@ -126,7 +132,10 @@ export interface ChatCompletionRequest {
   tools?: ChatToolDefinition[];
   tool_choice?: ChatToolChoice;
   parallel_tool_calls?: boolean;
+  web_search?: boolean | { max_results?: number };
+  search?: boolean;
 }
+
 
 export interface ChatCompletionChoice {
   index: number;
