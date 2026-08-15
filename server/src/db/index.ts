@@ -49,6 +49,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV11(db);
   migrateModelsV12(db);
   migrateModelsV13(db);
+  migrateModelsV14(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
@@ -1040,6 +1041,65 @@ function migrateModelsV13(db: Database.Database) {
   });
   apply();
 }
+
+/**
+ * V14: Free tier rerouting and stabilization across all providers.
+ * - OpenRouter: Add official `openrouter/free` smart auto-router for free tier models.
+ * - Google: Add verified stable free models `gemini-1.5-flash`, `gemini-1.5-flash-8b`,
+ *   and `gemini-2.0-flash-lite` with generous 1,500 RPD free tier quotas to provide
+ *   dependable Google fallbacks when 2.5-flash or 2.5-pro hits 429 quota exhaustion.
+ *   Ensure gemini-2.5-pro remains disabled (paid-only in practice).
+ * - GitHub Models: Add `gpt-4o-mini` with 15 RPM / 150 RPD free tier.
+ * - Mistral: Add `mistral-small-latest` and `open-mistral-nemo` to free experiment tier.
+ * - Zhipu: Add `glm-4-flash` (unlimited 1M TPD free pool).
+ */
+function migrateModelsV14(db: Database.Database) {
+  // Ensure paid-only Gemini Pro models are disabled on free tier
+  db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'google' AND model_id = 'gemini-2.5-pro'").run();
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
+    // OpenRouter official smart free router (dynamically routes to active free models)
+    ['openrouter', 'openrouter/free',                      'OpenRouter Free Router',          2,  9,  'Frontier', 20, 200,  null,    null,    '~6M',    131072],
+
+    // Google high-availability free tier models (15 RPM, 1500 RPD, 1M TPM)
+    ['google',     'gemini-1.5-flash',                     'Gemini 1.5 Flash',                6,  4,  'Large',    15, 1500, 1000000, null,    '~100M',  1048576],
+    ['google',     'gemini-1.5-flash-8b',                  'Gemini 1.5 Flash 8B',             12, 3,  'Medium',   15, 1500, 1000000, null,    '~100M',  1048576],
+    ['google',     'gemini-2.0-flash-lite',                'Gemini 2.0 Flash-Lite',           8,  3,  'Medium',   30, 1500, 1000000, null,    '~100M',  1048576],
+
+    // GitHub Models free prototyping tier
+    ['github',     'gpt-4o-mini',                          'GPT-4o mini (GitHub)',            8,  5,  'Medium',   15, 150,  null,    null,    '~9M',    128000],
+
+    // Mistral free experiment tier (shared 2 RPM / 500k TPM / 1B tokens/mo)
+    ['mistral',    'mistral-small-latest',                 'Mistral Small 3',                 10, 6,  'Medium',   2,  null, 500000,  null,    '~50-100M', 131072],
+    ['mistral',    'open-mistral-nemo',                    'Mistral NeMo',                    15, 6,  'Medium',   2,  null, 500000,  null,    '~50-100M', 128000],
+
+    // Zhipu / Z.ai high-volume free tier
+    ['zhipu',      'glm-4-flash',                          'GLM-4 Flash',                     12, 4,  'Large',    null, null, null,    1000000, '~30M',   131072],
+  ];
+
+  const apply = db.transaction(() => {
+    for (const a of additions) insert.run(...a);
+
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC
+    `).all() as { id: number }[];
+
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  });
+  apply();
+}
+
 
 
 

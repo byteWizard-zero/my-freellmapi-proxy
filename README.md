@@ -41,20 +41,20 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 
 <table>
 <tr>
-<td align="center" width="180"><a href="https://ai.google.dev"><b>Google</b><br/>Gemini 2.5 Flash · 3.x previews</a></td>
+<td align="center" width="180"><a href="https://ai.google.dev"><b>Google</b><br/>Gemini 1.5/2.0 Flash · Flash-Lite · 3.x</a></td>
 <td align="center" width="180"><a href="https://groq.com"><b>Groq</b><br/>Llama 3.3, Llama 4, GPT-OSS, Qwen3</a></td>
-<td align="center" width="180"><a href="https://cerebras.ai"><b>Cerebras</b><br/>Qwen3 235B</a></td>
+<td align="center" width="180"><a href="https://cerebras.ai"><b>Cerebras</b><br/>Qwen3 235B · Llama 3.1 8B</a></td>
 <td align="center" width="180"><a href="https://cloud.sambanova.ai"><b>SambaNova</b><br/>DeepSeek V3.x · Llama 4 · Gemma 3</a></td>
 </tr>
 <tr>
-<td align="center"><a href="https://mistral.ai"><b>Mistral</b><br/>Large 3 · Medium 3.5 · Codestral · Devstral</a></td>
-<td align="center"><a href="https://openrouter.ai"><b>OpenRouter</b><br/>19 free-tier models</a></td>
-<td align="center"><a href="https://github.com/marketplace/models"><b>GitHub Models</b><br/>GPT-4.1 · GPT-4o</a></td>
+<td align="center"><a href="https://mistral.ai"><b>Mistral</b><br/>Large 3 · Codestral · Small 3 · NeMo</a></td>
+<td align="center"><a href="https://openrouter.ai"><b>OpenRouter</b><br/>openrouter/free · 20+ free models</a></td>
+<td align="center"><a href="https://github.com/marketplace/models"><b>GitHub Models</b><br/>GPT-4.1 · GPT-4o · GPT-4o mini</a></td>
 <td align="center"><a href="https://developers.cloudflare.com/workers-ai"><b>Cloudflare</b><br/>Kimi K2 · GLM-4.7 · GPT-OSS · Granite 4</a></td>
 </tr>
 <tr>
 <td align="center"><a href="https://cohere.com"><b>Cohere</b><br/>Command R+ · Command-A (trial)</a></td>
-<td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4.5 · GLM-4.7 Flash</a></td>
+<td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4 Flash · GLM-4.5 · GLM-4.7</a></td>
 <td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM (disabled by default)</a></td>
 <td align="center"><a href="https://moonshot.cn"><b>Moonshot AI (Kimi)</b><br/>Kimi 8k/32k/128k · K2.5/2.6/2.7</a></td>
 </tr>
