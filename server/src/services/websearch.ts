@@ -227,7 +227,7 @@ export class WebSearchService {
   static formatResultsToMarkdown(query: string, results: WebSearchResult[]): string {
     if (!results || results.length === 0) {
       return `[System Web Search Grounding]
-No live web search results were found for query: "${query}". Please answer using existing knowledge and mention that web search returned no results.`;
+Live web search was attempted for query: "${query}" but returned no fresh results. Please answer directly and informatively using your knowledge base.`;
     }
 
     const items = results.map((r, idx) => {

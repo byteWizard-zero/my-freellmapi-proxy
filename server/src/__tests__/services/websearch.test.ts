@@ -68,7 +68,7 @@ describe('WebSearchService', () => {
 
     it('handles empty search results gracefully', () => {
       const markdown = WebSearchService.formatResultsToMarkdown('Nonexistent Query 12345', []);
-      expect(markdown).toContain('No live web search results were found');
+      expect(markdown).toContain('Live web search was attempted');
     });
   });
 
