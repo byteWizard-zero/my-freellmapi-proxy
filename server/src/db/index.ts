@@ -1057,6 +1057,11 @@ function migrateModelsV14(db: Database.Database) {
   // Ensure paid-only Gemini Pro models are disabled on free tier
   db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'google' AND model_id = 'gemini-2.5-pro'").run();
 
+  // Disable paid/subscription-only Qwen coder variants on OpenRouter and Ollama
+  db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'openrouter' AND model_id = 'qwen/qwen3-coder:free'").run();
+  db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'openrouter' AND model_id = 'qwen/qwen3-next-80b-a3b-instruct:free'").run();
+  db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'ollama' AND model_id = 'qwen3-coder:480b'").run();
+
   const insert = db.prepare(`
     INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
