@@ -50,6 +50,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV12(db);
   migrateModelsV13(db);
   migrateModelsV14(db);
+  migrateModelsV15(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
@@ -1104,6 +1105,65 @@ function migrateModelsV14(db: Database.Database) {
   });
   apply();
 }
+
+/**
+ * V15: Live API probe & research-based model list update.
+ * - Google: Disable deprecated/removed 404 models (`gemini-1.5-flash`, `gemini-1.5-flash-8b`, `gemini-2.0-flash-lite`).
+ *   Ensure active working preview models (`gemini-3.1-flash-lite-preview`, `gemini-3-flash-preview`,
+ *   `gemini-2.5-flash`, `gemini-2.5-flash-lite`) are enabled and prioritized.
+ * - OpenRouter: Disable retired/paywalled free slugs (`z-ai/glm-4.5-air:free`, `tencent/hy3-preview:free`,
+ *   `poolside/laguna-m.1:free`, `google/gemma-4-31b-it:free`, `google/gemma-4-26b-a4b-it:free`,
+ *   `nvidia/nemotron-3-super-120b-a12b:free`, `nvidia/nemotron-3-nano-30b-a3b:free`,
+ *   `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-nano-9b-v2:free`,
+ *   `liquid/lfm-2.5-1.2b-instruct:free`, `liquid/lfm-2.5-1.2b-thinking:free`,
+ *   `openai/gpt-oss-20b:free`, `meta-llama/llama-3.3-70b-instruct:free`).
+ * - NVIDIA NIM: Disable de-provisioned/retired models (410 Gone) and paywalled models (403 Forbidden).
+ */
+function migrateModelsV15(db: Database.Database) {
+  // 1) Disable deprecated/removed 404 Google Gemini models
+  db.prepare("UPDATE models SET enabled = 0 WHERE platform = 'google' AND model_id IN ('gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash-lite')").run();
+
+  // 2) Disable retired/paywalled OpenRouter free slugs
+  db.prepare(`
+    UPDATE models SET enabled = 0 WHERE platform = 'openrouter' AND model_id IN (
+      'z-ai/glm-4.5-air:free',
+      'tencent/hy3-preview:free',
+      'poolside/laguna-m.1:free',
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'nvidia/nemotron-3-nano-30b-a3b:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+      'nvidia/nemotron-nano-9b-v2:free',
+      'liquid/lfm-2.5-1.2b-instruct:free',
+      'liquid/lfm-2.5-1.2b-thinking:free',
+      'openai/gpt-oss-20b:free',
+      'meta-llama/llama-3.3-70b-instruct:free'
+    )
+  `).run();
+
+  // 3) Disable retired (410 Gone) or paywalled (403 Forbidden) NVIDIA NIM models
+  db.prepare(`
+    UPDATE models SET enabled = 0 WHERE platform = 'nvidia' AND model_id IN (
+      'deepseek-ai/deepseek-v4-pro',
+      'mistralai/mistral-large-3-675b-instruct-2512',
+      'minimaxai/minimax-m2.7',
+      'meta/llama-4-maverick-17b-128e-instruct',
+      'moonshotai/kimi-k2.6',
+      'meta/llama-3.1-70b-instruct',
+      'meta/llama-3.3-70b-instruct',
+      'google/gemma-4-31b-it',
+      'nvidia/nemotron-3-super-120b-a12b',
+      'nvidia/nemotron-3-nano-30b-a3b'
+    )
+  `).run();
+
+  // 4) Ensure known active models are enabled
+  db.prepare("UPDATE models SET enabled = 1 WHERE platform = 'google' AND model_id IN ('gemini-3.1-flash-lite-preview', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite')").run();
+  db.prepare("UPDATE models SET enabled = 1 WHERE platform = 'openrouter' AND model_id = 'openrouter/free'").run();
+  db.prepare("UPDATE models SET enabled = 1 WHERE platform = 'zhipu' AND model_id IN ('glm-4-flash', 'glm-4.5-flash')").run();
+}
+
 
 
 
