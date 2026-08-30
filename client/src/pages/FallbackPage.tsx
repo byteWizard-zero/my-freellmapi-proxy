@@ -39,6 +39,7 @@ interface FallbackEntry {
   rpdLimit: number | null
   monthlyTokenBudget: string
   keyCount: number
+  modality?: string
 }
 
 function formatTokens(n: number): string {
@@ -58,64 +59,54 @@ const platformColors: Record<string, string> = {
   google:      '#4285f4',
   groq:        '#f55036',
   cerebras:    '#8b5cf6',
-  sambanova:   '#14b8a6',
+  sambanova:   '#10b981',
   nvidia:      '#76b900',
-  mistral:     '#f59e0b',
-  openrouter:  '#ec4899',
-  github:      '#6e7b8b',
-  cohere:      '#d946ef',
+  mistral:     '#f97316',
+  openrouter:  '#6366f1',
+  github:      '#e2e8f0',
+  cohere:      '#d97706',
   cloudflare:  '#f38020',
-  zhipu:       '#06b6d4',
-  ollama:      '#000000',
-  kilo:        '#7c3aed',
-  pollinations: '#a855f7',
-  llm7:        '#0ea5e9',
-  moonshot:    '#f43f5e',
+  zhipu:       '#0284c7',
+  ollama:      '#94a3b8',
+  kilo:        '#06b6d4',
+  pollinations:'#ec4899',
+  llm7:        '#a855f7',
+  moonshot:    '#3b82f6',
 }
 
 function TokenUsageBar({ data }: { data: TokenUsageData }) {
   const { totalBudget, totalUsed, models } = data
-  const remaining = Math.max(0, totalBudget - totalUsed)
-  const remainingPct = totalBudget > 0 ? Math.round((remaining / totalBudget) * 100) : 0
+  const remainingTotal = Math.max(0, totalBudget - totalUsed)
+  const usagePercent = totalBudget > 0 ? Math.min(100, Math.round((totalUsed / totalBudget) * 100)) : 0
 
-  // Scale each model's segment proportionally so the colored portion of the
-  // bar sums to `remaining`; the grey tail represents what's been used.
-  const modelsWithWidth = models.map(m => ({
+  const activeModels = models.filter(m => m.budget > 0)
+  const modelsWithWidth = activeModels.map(m => ({
     ...m,
-    remainingTokens: totalBudget > 0 ? (m.budget / totalBudget) * remaining : 0,
-    widthPct: totalBudget > 0 ? (m.budget / totalBudget) * (remaining / totalBudget) * 100 : 0,
+    remainingTokens: m.budget,
+    widthPercent: totalBudget > 0 ? (m.budget / totalBudget) * 100 : 0,
   }))
-  const usedPct = totalBudget > 0 ? (totalUsed / totalBudget) * 100 : 0
 
   return (
-    <section className="rounded-lg border bg-card p-5">
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-sm font-medium">Monthly token budget</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          <span className="text-foreground font-medium">{formatTokens(remaining)}</span> remaining
-          <span className="mx-1.5">·</span>
-          {remainingPct}% of {formatTokens(totalBudget)}
+    <section className="rounded-lg border bg-card p-5" aria-label="Monthly token budget pool">
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-medium">Monthly free token pool</h2>
+        <span className="text-xs font-mono text-muted-foreground">
+          {formatTokens(remainingTotal)} / {formatTokens(totalBudget)} remaining ({100 - usagePercent}%)
         </span>
       </div>
 
-      <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
+      <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
         {modelsWithWidth.map((m, i) => (
           <div
             key={i}
-            title={`${m.displayName} (${m.platform}) — ${formatTokens(m.remainingTokens)} remaining`}
+            className="h-full transition-all duration-300 first:rounded-l-full last:rounded-r-full"
             style={{
-              width: `${m.widthPct}%`,
+              width: `${m.widthPercent}%`,
               backgroundColor: platformColors[m.platform] ?? '#94a3b8',
             }}
+            title={`${m.displayName} (${m.platform}): ${formatTokens(m.remainingTokens)}`}
           />
         ))}
-        {totalUsed > 0 && (
-          <div
-            title={`Used — ${formatTokens(totalUsed)}`}
-            className="bg-muted-foreground/30"
-            style={{ width: `${usedPct}%` }}
-          />
-        )}
       </div>
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-1.5 text-xs tabular-nums">
@@ -153,6 +144,21 @@ function SortableModelRow({
     transition,
   }
 
+  const modalityBadge = (() => {
+    switch (entry.modality) {
+      case 'vision':
+        return <span className="text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded font-mono font-medium">Vision</span>
+      case 'image':
+        return <span className="text-[10px] bg-pink-500/10 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded font-mono font-medium">Image</span>
+      case 'audio_stt':
+        return <span className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">Audio STT</span>
+      case 'audio_tts':
+        return <span className="text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-1.5 py-0.5 rounded font-mono font-medium">Audio TTS</span>
+      default:
+        return null
+    }
+  })()
+
   return (
     <div
       ref={setNodeRef}
@@ -171,22 +177,31 @@ function SortableModelRow({
           <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
         </svg>
       </button>
-      <span className="text-xs font-mono text-muted-foreground w-5 tabular-nums">{index + 1}</span>
+
+      <span className="text-xs font-mono text-muted-foreground w-6 text-right tabular-nums">
+        {index + 1}
+      </span>
+
+      <span
+        className="size-2 rounded-sm flex-shrink-0"
+        style={{ backgroundColor: platformColors[entry.platform] ?? '#94a3b8' }}
+        title={entry.platform}
+      />
+
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{entry.displayName}</span>
+          <span className="text-sm font-medium truncate">{entry.displayName}</span>
+          {modalityBadge}
           <span className="text-xs text-muted-foreground">{entry.platform}</span>
-          {entry.penalty > 0 && (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              −{entry.penalty} penalty
+          {entry.sizeLabel && (
+            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground font-mono">
+              {entry.sizeLabel}
             </span>
           )}
         </div>
-        <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground tabular-nums">
-          <span>Intel #{entry.intelligenceRank}</span>
-          <span>Speed #{entry.speedRank}</span>
-          {entry.rpmLimit && <span>{entry.rpmLimit} rpm</span>}
-          {entry.rpdLimit && <span>{entry.rpdLimit} rpd</span>}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+          {entry.rpmLimit && <span>{entry.rpmLimit} RPM</span>}
+          {entry.rpdLimit && <span>{entry.rpdLimit} RPD</span>}
           <span>{entry.monthlyTokenBudget} tok/mo</span>
         </div>
       </div>
@@ -201,6 +216,7 @@ function SortableModelRow({
 export default function FallbackPage() {
   const queryClient = useQueryClient()
   const [localEntries, setLocalEntries] = useState<FallbackEntry[] | null>(null)
+  const [modalityFilter, setModalityFilter] = useState<'all' | 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts'>('all')
 
   const { data: entries = [], isLoading } = useQuery<FallbackEntry[]>({
     queryKey: ['fallback'],
@@ -231,7 +247,12 @@ export default function FallbackPage() {
   })
 
   const allEntries = localEntries ?? entries
-  const displayEntries = allEntries.filter(e => e.keyCount > 0)
+  const configuredEntries = allEntries.filter(e => e.keyCount > 0)
+  const displayEntries = configuredEntries.filter(e => {
+    if (modalityFilter === 'all') return true
+    if (modalityFilter === 'chat') return !e.modality || e.modality === 'chat'
+    return e.modality === modalityFilter
+  })
   const unconfiguredPlatforms = [...new Set(allEntries.filter(e => e.keyCount === 0).map(e => e.platform))]
 
   const sensors = useSensors(
@@ -298,12 +319,36 @@ export default function FallbackPage() {
           <TokenUsageBar data={tokenUsage} />
         )}
 
+        {/* Modality Filter Pills */}
+        <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto">
+          {[
+            { id: 'all', label: 'All Models' },
+            { id: 'chat', label: '💬 Chat / LLM' },
+            { id: 'vision', label: '👁️ Vision' },
+            { id: 'image', label: '🎨 Image Gen' },
+            { id: 'audio_stt', label: '🎙️ Audio STT' },
+            { id: 'audio_tts', label: '🔊 Audio TTS' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setModalityFilter(tab.id as any)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                modalityFilter === tab.id
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : displayEntries.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              No models available. Add API keys on the <a href="/keys" className="underline text-foreground">Keys page</a> first.
+              No models found for this filter. Add API keys on the <a href="/keys" className="underline text-foreground">Keys page</a> first.
             </p>
           </div>
         ) : (

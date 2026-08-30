@@ -28,6 +28,25 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'moonshot', label: 'Moonshot AI (Kimi)' },
 ]
 
+export const PLATFORM_CAPABILITIES: Record<Platform, string[]> = {
+  google: ['Chat', 'Vision', 'Image Gen', 'Audio STT'],
+  cloudflare: ['Chat', 'Vision', 'Image Gen', 'Audio STT', 'Audio TTS'],
+  groq: ['Chat', 'Vision', 'Audio STT'],
+  pollinations: ['Chat', 'Image Gen', 'Audio TTS'],
+  mistral: ['Chat', 'Vision'],
+  openrouter: ['Chat', 'Vision'],
+  github: ['Chat', 'Vision'],
+  zhipu: ['Chat', 'Vision'],
+  cerebras: ['Chat'],
+  sambanova: ['Chat'],
+  nvidia: ['Chat'],
+  cohere: ['Chat'],
+  ollama: ['Chat'],
+  kilo: ['Chat'],
+  llm7: ['Chat'],
+  moonshot: ['Chat'],
+}
+
 const statusDot: Record<string, string> = {
   healthy: 'bg-emerald-500',
   rate_limited: 'bg-amber-500',
@@ -430,8 +449,28 @@ export default function KeysPage() {
             <div className="space-y-6">
               {grouped.map(group => (
                 <div key={group.value}>
-                  <div className="flex items-baseline justify-between mb-2">
-                    <h3 className="text-sm font-medium">{group.label}</h3>
+                  <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium">{group.label}</h3>
+                      <div className="flex items-center gap-1">
+                        {PLATFORM_CAPABILITIES[group.value as Platform]?.map(cap => (
+                          <span
+                            key={cap}
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              cap === 'Vision'
+                                ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                                : cap === 'Image Gen'
+                                ? 'bg-pink-500/10 text-pink-600 dark:text-pink-400'
+                                : cap.startsWith('Audio')
+                                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {cap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {group.keys.length} key{group.keys.length === 1 ? '' : 's'}
                     </span>
