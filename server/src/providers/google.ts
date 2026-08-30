@@ -245,9 +245,16 @@ function extractToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[] {
 
 function extractText(parts: GeminiPart[] | undefined): string | null {
   if (!parts) return null;
-  const text = parts
-    .map(p => p.text ?? '')
-    .join('');
+  const segments: string[] = [];
+  for (const p of parts) {
+    if (p.text) {
+      segments.push(p.text);
+    } else if (p.inlineData?.data) {
+      const mime = p.inlineData.mimeType || 'image/png';
+      segments.push(`\n\n![Generated Image](data:${mime};base64,${p.inlineData.data})\n\n`);
+    }
+  }
+  const text = segments.join('');
   return text.length > 0 ? text : null;
 }
 
@@ -292,11 +299,23 @@ export class GoogleProvider extends BaseProvider {
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts;
     const toolCalls = extractToolCalls(parts);
-    const text = extractText(parts);
+    let text = extractText(parts);
+
+    if (!text && toolCalls.length === 0) {
+      if (candidate?.finishReason === 'SAFETY') {
+        text = 'Response was blocked by safety filters.';
+      } else if (candidate?.finishReason === 'RECITATION') {
+        text = 'Response was blocked due to recitation/copyright policies.';
+      } else if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+        text = `Response stopped (${candidate.finishReason}).`;
+      } else {
+        text = 'I inspected your image, but no text was produced. To generate or transform images into anime style, please switch to the 🎨 Image Studio tab or call /v1/images/generations.';
+      }
+    }
 
     const usage: TokenUsage = {
       prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
-      completion_tokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+      completion_tokens: data.usageMetadata?.candidatesTokenCount ?? (text ? Math.ceil(text.length / 4) : 0),
       total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
     };
 
