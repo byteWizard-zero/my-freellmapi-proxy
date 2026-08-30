@@ -7,6 +7,7 @@ import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } fro
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 import { WebSearchService } from '../services/websearch.js';
+import { normalizeImage } from '../lib/image-normalizer.js';
 
 export const proxyRouter = Router();
 
@@ -313,6 +314,22 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       ...(m.name ? { name: m.name } : {}),
     };
   });
+
+  // Normalize all incoming image payloads (HEIC, TIFF, BMP, WebP, etc.) to standard LLM formats
+  for (const m of messages) {
+    if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (part && typeof part === 'object' && (part as any).type === 'image_url' && (part as any).image_url?.url) {
+          try {
+            const normalized = await normalizeImage((part as any).image_url.url);
+            (part as any).image_url.url = normalized.dataUrl;
+          } catch (e: any) {
+            console.warn('[Proxy] Failed to normalize image, proceeding with original:', e.message);
+          }
+        }
+      }
+    }
+  }
 
   const isWebSearchRequested = Boolean(
     parsed.data.web_search ||
