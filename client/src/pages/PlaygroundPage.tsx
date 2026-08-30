@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { processUniversalImage } from '@/lib/image-processor'
 import {
   MessageSquare,
   ImageIcon,
@@ -67,6 +68,7 @@ export default function PlaygroundPage() {
   })
   const [input, setInput] = useState(() => localStorage.getItem('freellmapi_playground_input') || '')
   const [loading, setLoading] = useState(false)
+  const [imageProcessing, setImageProcessing] = useState(false)
   const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('freellmapi_playground_model') || 'auto')
   const [disableFallback, setDisableFallback] = useState(() => localStorage.getItem('freellmapi_playground_disable_fallback') === 'true')
   const [enableWebSearch, setEnableWebSearch] = useState(() => localStorage.getItem('freellmapi_playground_web_search') === 'true')
@@ -150,28 +152,36 @@ export default function PlaygroundPage() {
   }, [messages, loading])
 
   // ---- CHAT HANDLERS ----
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setAttachedImage(reader.result as string)
-    }
-    reader.readAsDataURL(file)
     e.target.value = ''
+    setImageProcessing(true)
+    try {
+      const result = await processUniversalImage(file)
+      setAttachedImage(result.dataUrl)
+    } catch (err: any) {
+      alert(`Failed to process image format: ${err.message}`)
+    } finally {
+      setImageProcessing(false)
+    }
   }
 
-  const handlePaste = (e: React.ClipboardEvent) => {
+  const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (file) {
-          const reader = new FileReader()
-          reader.onload = () => {
-            setAttachedImage(reader.result as string)
+          setImageProcessing(true)
+          try {
+            const result = await processUniversalImage(file)
+            setAttachedImage(result.dataUrl)
+          } catch (err: any) {
+            console.error('[Playground] Failed to process pasted image:', err)
+          } finally {
+            setImageProcessing(false)
           }
-          reader.readAsDataURL(file)
         }
       }
     }
@@ -179,7 +189,7 @@ export default function PlaygroundPage() {
 
   const handleSend = async () => {
     const text = input.trim()
-    if ((!text && !attachedImage) || loading) return
+    if ((!text && !attachedImage) || loading || imageProcessing) return
 
     const userMsg: ChatMessage = {
       role: 'user',
@@ -646,20 +656,29 @@ export default function PlaygroundPage() {
           </div>
 
           {/* Attached Image Preview */}
-          {attachedImage && (
+          {(attachedImage || imageProcessing) && (
             <div className="px-4 py-2 border-t bg-muted/40 flex items-center gap-3">
-              <div className="relative size-14 rounded-lg overflow-hidden border bg-background shrink-0">
-                <img src={attachedImage} alt="Attachment" className="size-full object-cover" />
-                <button
-                  onClick={() => setAttachedImage(null)}
-                  className="absolute top-0.5 right-0.5 p-0.5 bg-black/70 hover:bg-black text-white rounded-full"
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-              <div className="text-xs text-muted-foreground truncate">
-                Image attached. Ready to send with vision model.
-              </div>
+              {imageProcessing ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  <span>Processing & converting image format (HEIC/RAW/TIFF)…</span>
+                </div>
+              ) : attachedImage ? (
+                <>
+                  <div className="relative size-14 rounded-lg overflow-hidden border bg-background shrink-0">
+                    <img src={attachedImage} alt="Attachment" className="size-full object-cover" />
+                    <button
+                      onClick={() => setAttachedImage(null)}
+                      className="absolute top-0.5 right-0.5 p-0.5 bg-black/70 hover:bg-black text-white rounded-full"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Image attached & normalized. Ready to send with vision model.
+                  </div>
+                </>
+              ) : null}
             </div>
           )}
 
@@ -669,7 +688,7 @@ export default function PlaygroundPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif,.tiff,.tif,.bmp,.webp,.avif,.png,.jpg,.jpeg,.svg,.gif,.ico"
                 className="hidden"
                 onChange={handleImageFileChange}
               />
