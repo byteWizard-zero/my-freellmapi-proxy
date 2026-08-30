@@ -43,6 +43,36 @@ export abstract class BaseProvider {
 
   abstract validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }>;
 
+  generateImage?(
+    apiKey: string,
+    prompt: string,
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ created: number; data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> }>;
+
+  transcribeAudio?(
+    apiKey: string,
+    audioBuffer: Buffer,
+    filename: string,
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ text: string; [key: string]: any }>;
+
+  translateAudio?(
+    apiKey: string,
+    audioBuffer: Buffer,
+    filename: string,
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ text: string; [key: string]: any }>;
+
+  generateSpeech?(
+    apiKey: string,
+    input: string,
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ audioBuffer: Buffer; contentType: string }>;
+
   protected async fetchWithTimeout(
     url: string,
     init: RequestInit,

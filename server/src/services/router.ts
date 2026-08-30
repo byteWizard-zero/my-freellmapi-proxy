@@ -178,7 +178,12 @@ export function routeRequest(
 
     // If request contains an image, restrict to vision-capable models
     if (hasImage) {
-      const isVisionCapable = model.platform === 'google' || model.model_id === 'gpt-4o';
+      const isVisionCapable = (model as any).modality === 'vision' ||
+        model.platform === 'google' ||
+        model.model_id.includes('vision') ||
+        model.model_id.includes('pixtral') ||
+        model.model_id.includes('gpt-4o') ||
+        model.model_id.includes('glm-4v');
       if (!isVisionCapable) continue;
     }
 

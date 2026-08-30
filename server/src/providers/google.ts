@@ -464,6 +464,190 @@ export class GoogleProvider extends BaseProvider {
     }
   }
 
+  async generateImage(
+    apiKey: string,
+    prompt: string,
+    modelId = 'imagen-3.0-generate-002',
+    options?: Record<string, unknown>,
+  ): Promise<{ created: number; data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> }> {
+    const isPredictEndpoint = modelId.includes('imagen') || modelId.includes('generate-002');
+    
+    if (isPredictEndpoint) {
+      const url = `${API_BASE}/models/${modelId}:predict?key=${apiKey}`;
+      const sampleCount = Number(options?.n ?? 1);
+      const size = String(options?.size ?? '1024x1024');
+      let aspectRatio = '1:1';
+      if (size === '1024x1792' || size === '720x1280') aspectRatio = '9:16';
+      else if (size === '1792x1024' || size === '1280x720') aspectRatio = '16:9';
+      else if (size === '1024x768') aspectRatio = '4:3';
+      else if (size === '768x1024') aspectRatio = '3:4';
+
+      const res = await this.fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instances: [{ prompt }],
+          parameters: {
+            sampleCount,
+            aspectRatio,
+            outputOptions: { mimeType: 'image/png' },
+          },
+        }),
+      }, 45000);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Google Imagen API error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+      }
+
+      const body = await res.json() as any;
+      const predictions = body.predictions ?? [];
+      const data: Array<{ b64_json?: string; url?: string }> = [];
+
+      for (const pred of predictions) {
+        const b64 = pred.bytesBase64Encoded ?? pred.image?.imageBytes;
+        if (b64) {
+          data.push({ b64_json: b64 });
+        }
+      }
+
+      if (data.length === 0) {
+        throw new Error('Google Imagen returned empty image predictions');
+      }
+
+      return {
+        created: Math.floor(Date.now() / 1000),
+        data,
+      };
+    }
+
+    // Standard Gemini Image Modality
+    const url = `${API_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ['IMAGE'] },
+      }),
+    }, 45000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google Image API error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const body = await res.json() as GeminiResponse;
+    const parts = body.candidates?.[0]?.content?.parts ?? [];
+    const data: Array<{ b64_json?: string; url?: string }> = [];
+
+    for (const p of parts) {
+      if (p.inlineData?.data) {
+        data.push({ b64_json: p.inlineData.data });
+      }
+    }
+
+    if (data.length === 0) {
+      throw new Error('Google Gemini returned no image parts');
+    }
+
+    return {
+      created: Math.floor(Date.now() / 1000),
+      data,
+    };
+  }
+
+  async transcribeAudio(
+    apiKey: string,
+    audioBuffer: Buffer,
+    filename: string,
+    modelId = 'gemini-2.5-flash',
+    options?: Record<string, unknown>,
+  ): Promise<{ text: string; [key: string]: any }> {
+    const ext = filename.split('.').pop()?.toLowerCase() ?? 'mp3';
+    let mimeType = 'audio/mp3';
+    if (ext === 'wav') mimeType = 'audio/wav';
+    else if (ext === 'ogg') mimeType = 'audio/ogg';
+    else if (ext === 'm4a') mimeType = 'audio/m4a';
+    else if (ext === 'webm') mimeType = 'audio/webm';
+    else if (ext === 'flac') mimeType = 'audio/flac';
+
+    const b64 = audioBuffer.toString('base64');
+    const prompt = options?.prompt
+      ? `Transcribe this audio recording verbatim. Context: ${options.prompt}. Return only the exact transcription text.`
+      : 'Transcribe this audio recording verbatim. Return only the exact transcription text.';
+
+    const url = `${API_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: b64 } },
+            { text: prompt },
+          ],
+        }],
+      }),
+    }, 45000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google Audio Transcribe error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const body = await res.json() as GeminiResponse;
+    const parts = body.candidates?.[0]?.content?.parts ?? [];
+    const text = extractText(parts)?.trim() ?? '';
+
+    return { text, _routed_via: { platform: 'google', model: modelId } };
+  }
+
+  async translateAudio(
+    apiKey: string,
+    audioBuffer: Buffer,
+    filename: string,
+    modelId = 'gemini-2.5-flash',
+    options?: Record<string, unknown>,
+  ): Promise<{ text: string; [key: string]: any }> {
+    const ext = filename.split('.').pop()?.toLowerCase() ?? 'mp3';
+    let mimeType = 'audio/mp3';
+    if (ext === 'wav') mimeType = 'audio/wav';
+    else if (ext === 'ogg') mimeType = 'audio/ogg';
+    else if (ext === 'm4a') mimeType = 'audio/m4a';
+    else if (ext === 'webm') mimeType = 'audio/webm';
+
+    const b64 = audioBuffer.toString('base64');
+    const prompt = 'Translate this spoken audio recording into English text. Return only the English translation.';
+
+    const url = `${API_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: b64 } },
+            { text: prompt },
+          ],
+        }],
+      }),
+    }, 45000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google Audio Translate error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const body = await res.json() as GeminiResponse;
+    const parts = body.candidates?.[0]?.content?.parts ?? [];
+    const text = extractText(parts)?.trim() ?? '';
+
+    return { text, _routed_via: { platform: 'google', model: modelId } };
+  }
+
   async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     try {
       const res = await this.fetchWithTimeout(

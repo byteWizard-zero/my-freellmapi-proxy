@@ -126,6 +126,111 @@ export class CloudflareProvider extends BaseProvider {
     }
   }
 
+  async generateImage(
+    apiKey: string,
+    prompt: string,
+    modelId = '@cf/black-forest-labs/flux-1-schnell',
+    options?: Record<string, unknown>,
+  ): Promise<{ created: number; data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> }> {
+    const { accountId, token } = this.parseKey(apiKey);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
+
+    const numSteps = modelId.includes('flux') ? 4 : (Number(options?.steps) || 20);
+    const size = String(options?.size ?? '1024x1024');
+    const [wStr, hStr] = size.split('x');
+    const width = parseInt(wStr, 10) || 1024;
+    const height = parseInt(hStr, 10) || 1024;
+
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        num_steps: numSteps,
+        width,
+        height,
+      }),
+    }, 45000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Cloudflare Image error ${res.status}: ${(err as any).error?.message ?? (err as any).errors?.[0]?.message ?? res.statusText}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const b64 = Buffer.from(arrayBuffer).toString('base64');
+
+    return {
+      created: Math.floor(Date.now() / 1000),
+      data: [{ b64_json: b64 }],
+    };
+  }
+
+  async transcribeAudio(
+    apiKey: string,
+    audioBuffer: Buffer,
+    _filename: string,
+    modelId = '@cf/openai/whisper',
+    _options?: Record<string, unknown>,
+  ): Promise<{ text: string; [key: string]: any }> {
+    const { accountId, token } = this.parseKey(apiKey);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
+
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: audioBuffer,
+    }, 45000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Cloudflare Whisper error ${res.status}: ${(err as any).error?.message ?? (err as any).errors?.[0]?.message ?? res.statusText}`);
+    }
+
+    const data = await res.json() as any;
+    const text = data.result?.text ?? data.text ?? '';
+    return { text, _routed_via: { platform: 'cloudflare', model: modelId } };
+  }
+
+  async generateSpeech(
+    apiKey: string,
+    input: string,
+    modelId = '@cf/myshell-ai/melo-tts',
+    _options?: Record<string, unknown>,
+  ): Promise<{ audioBuffer: Buffer; contentType: string }> {
+    const { accountId, token } = this.parseKey(apiKey);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
+
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: input,
+        lang: 'en',
+      }),
+    }, 30000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Cloudflare TTS error ${res.status}: ${(err as any).error?.message ?? (err as any).errors?.[0]?.message ?? res.statusText}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    return {
+      audioBuffer: Buffer.from(arrayBuffer),
+      contentType: res.headers.get('content-type') || 'audio/mpeg',
+    };
+  }
+
   async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     let token: string;
     try {
@@ -176,3 +281,4 @@ export class CloudflareProvider extends BaseProvider {
     }
   }
 }
+
