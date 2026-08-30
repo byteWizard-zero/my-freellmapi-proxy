@@ -8,6 +8,7 @@ import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 import { WebSearchService } from '../services/websearch.js';
 import { normalizeImage } from '../lib/image-normalizer.js';
+import { ImageSynthesisService } from '../services/image-synthesis-service.js';
 
 export const proxyRouter = Router();
 
@@ -328,6 +329,20 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           }
         }
       }
+    }
+  }
+
+  // Detect image-to-image styling/transformation or text-to-image intent directly in chat
+  const imageIntent = ImageSynthesisService.detectIntent(messages);
+  if (imageIntent && !stream) {
+    try {
+      const synthesisResult = await ImageSynthesisService.executeSynthesis(imageIntent);
+      const routedHeader = `${synthesisResult._routed_via?.platform}/${synthesisResult._routed_via?.model}`;
+      res.setHeader('X-Routed-Via', routedHeader);
+      res.json(synthesisResult);
+      return;
+    } catch (err: any) {
+      console.warn('[Proxy] Image synthesis execution failed, falling back to standard LLM chat completion:', err.message);
     }
   }
 
