@@ -51,6 +51,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV13(db);
   migrateModelsV14(db);
   migrateModelsV15(db);
+  migrateModelsV16(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
@@ -139,6 +140,7 @@ function createTables(db: Database.Database) {
       monthly_token_budget TEXT NOT NULL DEFAULT '',
       context_window INTEGER,
       enabled INTEGER NOT NULL DEFAULT 1,
+      modality TEXT NOT NULL DEFAULT 'chat',
       UNIQUE(platform, model_id)
     );
 
@@ -1163,6 +1165,105 @@ function migrateModelsV15(db: Database.Database) {
   db.prepare("UPDATE models SET enabled = 1 WHERE platform = 'openrouter' AND model_id = 'openrouter/free'").run();
   db.prepare("UPDATE models SET enabled = 1 WHERE platform = 'zhipu' AND model_id IN ('glm-4-flash', 'glm-4.5-flash')").run();
 }
+
+function migrateModelsV16(db: Database.Database) {
+  // 1) Ensure modality column exists
+  const pragma = db.pragma('table_info(models)') as any[];
+  const hasModality = pragma.some(col => col.name === 'modality');
+  if (!hasModality) {
+    db.prepare("ALTER TABLE models ADD COLUMN modality TEXT NOT NULL DEFAULT 'chat'").run();
+    console.log('[Migration] Added modality column to models table');
+  }
+
+  // 2) Tag known vision-capable models
+  const visionModels: Array<[string, string]> = [
+    ['google', 'gemini-2.5-flash'],
+    ['google', 'gemini-2.5-flash-lite'],
+    ['google', 'gemini-2.5-pro'],
+    ['google', 'gemini-3-flash-preview'],
+    ['google', 'gemini-3.1-flash-lite-preview'],
+    ['mistral', 'pixtral-12b-2409'],
+    ['mistral', 'ministral-14b-2512'],
+    ['groq', 'llama-3.2-11b-vision-preview'],
+    ['groq', 'llama-3.2-90b-vision-preview'],
+    ['cloudflare', '@cf/meta/llama-3.2-11b-vision-instruct'],
+    ['github', 'gpt-4o'],
+    ['github', 'gpt-4o-mini'],
+    ['openrouter', 'openrouter/free'],
+    ['zhipu', 'glm-4v-flash'],
+  ];
+
+  const updateModality = db.prepare("UPDATE models SET modality = ? WHERE platform = ? AND model_id = ?");
+  for (const [platform, modelId] of visionModels) {
+    updateModality.run('vision', platform, modelId);
+  }
+
+  // 3) Insert new Image Generation models
+  const insertModel = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, enabled, modality)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const imageModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    // platform, model_id, display_name, intel_rank, speed_rank, size_label, rpm, rpd, tpm, tpd, budget, context, enabled, modality
+    ['pollinations', 'flux', 'Pollinations Flux (Free)', 2, 2, 'Image', null, null, null, null, 'Unlimited', null, 1, 'image'],
+    ['pollinations', 'flux-realism', 'Pollinations Flux Realism', 2, 2, 'Image', null, null, null, null, 'Unlimited', null, 1, 'image'],
+    ['pollinations', 'flux-anime', 'Pollinations Flux Anime', 3, 2, 'Image', null, null, null, null, 'Unlimited', null, 1, 'image'],
+    ['pollinations', 'turbo', 'Pollinations Turbo', 4, 1, 'Image', null, null, null, null, 'Unlimited', null, 1, 'image'],
+    ['cloudflare', '@cf/black-forest-labs/flux-1-schnell', 'Cloudflare Flux 1 Schnell', 2, 2, 'Image', 10, 100, null, null, '~3,000 imgs', null, 1, 'image'],
+    ['cloudflare', '@cf/stabilityai/stable-diffusion-xl-base-1.0', 'Cloudflare SDXL Base 1.0', 3, 3, 'Image', 10, 100, null, null, '~3,000 imgs', null, 1, 'image'],
+    ['google', 'imagen-3.0-generate-002', 'Google Imagen 3', 1, 3, 'Image', 15, 1500, null, null, '~45,000 imgs', null, 1, 'image'],
+  ];
+
+  for (const m of imageModels) {
+    insertModel.run(...m);
+    // Ensure modality is updated if model already existed
+    updateModality.run('image', m[0], m[1]);
+  }
+
+  // 4) Insert Audio STT (Transcription / Translation) models
+  const sttModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    ['groq', 'whisper-large-v3', 'Groq Whisper Large v3', 1, 1, 'Audio STT', 30, 1000, null, null, '~30,000 reqs', null, 1, 'audio_stt'],
+    ['groq', 'whisper-large-v3-turbo', 'Groq Whisper Large v3 Turbo', 1, 1, 'Audio STT', 30, 1000, null, null, '~30,000 reqs', null, 1, 'audio_stt'],
+    ['groq', 'distil-whisper-large-v3-en', 'Groq Distil Whisper v3', 2, 1, 'Audio STT', 30, 1000, null, null, '~30,000 reqs', null, 1, 'audio_stt'],
+    ['cloudflare', '@cf/openai/whisper', 'Cloudflare Whisper', 2, 2, 'Audio STT', 10, 100, null, null, '~3,000 reqs', null, 1, 'audio_stt'],
+    ['cloudflare', '@cf/openai/whisper-large-v3-turbo', 'Cloudflare Whisper v3 Turbo', 1, 2, 'Audio STT', 10, 100, null, null, '~3,000 reqs', null, 1, 'audio_stt'],
+  ];
+
+  for (const m of sttModels) {
+    insertModel.run(...m);
+    updateModality.run('audio_stt', m[0], m[1]);
+  }
+
+  // 5) Insert Audio TTS (Speech Synthesis) models
+  const ttsModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    ['pollinations', 'openai-audio', 'Pollinations Voice TTS', 2, 1, 'Audio TTS', null, null, null, null, 'Unlimited', null, 1, 'audio_tts'],
+    ['cloudflare', '@cf/myshell-ai/melo-tts', 'Cloudflare Melo TTS', 2, 2, 'Audio TTS', 10, 100, null, null, '~3,000 reqs', null, 1, 'audio_tts'],
+  ];
+
+  for (const m of ttsModels) {
+    insertModel.run(...m);
+    updateModality.run('audio_tts', m[0], m[1]);
+  }
+
+  // 6) Ensure all models have a fallback_config row
+  const missing = db.prepare(`
+    SELECT m.id FROM models m
+    LEFT JOIN fallback_config f ON m.id = f.model_db_id
+    WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC, m.id ASC
+  `).all() as { id: number }[];
+
+  if (missing.length > 0) {
+    const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+    const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+    for (let i = 0; i < missing.length; i++) {
+      addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  }
+
+  console.log('[Migration V16] Vision, Image, and Audio models seeded and tagged successfully.');
+}
+
 
 
 

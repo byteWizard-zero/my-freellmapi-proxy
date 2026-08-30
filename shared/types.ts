@@ -22,6 +22,8 @@ export type Platform =
   | 'llm7'
   | 'moonshot';
 
+export type ModelModality = 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts';
+
 export interface Model {
   id: number;
   platform: Platform;
@@ -37,6 +39,7 @@ export interface Model {
   monthlyTokenBudget: string;
   contextWindow: number | null;
   enabled: boolean;
+  modality?: ModelModality;
 }
 
 export type KeyStatus = 'healthy' | 'rate_limited' | 'invalid' | 'error' | 'unknown';
@@ -228,3 +231,131 @@ export interface RateLimitStatus {
   available: boolean;
   nextResetAt: string | null;
 }
+
+// ---- Image Generation Types (OpenAI-Compatible) ----
+
+export type ImageSize =
+  | '256x256'
+  | '512x512'
+  | '1024x1024'
+  | '1024x1792'
+  | '1792x1024'
+  | '1280x720'
+  | '720x1280'
+  | string;
+
+export type ImageResponseFormat = 'url' | 'b64_json';
+
+export interface ImageGenerationRequest {
+  prompt: string;
+  model?: string;
+  n?: number;
+  quality?: 'standard' | 'hd' | string;
+  response_format?: ImageResponseFormat;
+  size?: ImageSize;
+  style?: 'vivid' | 'natural' | string;
+  user?: string;
+}
+
+export interface ImageData {
+  b64_json?: string;
+  url?: string;
+  revised_prompt?: string;
+}
+
+export interface ImageGenerationResponse {
+  created: number;
+  data: ImageData[];
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+export interface ImageEditRequest {
+  image: string; // base64 or file buffer reference
+  prompt: string;
+  mask?: string;
+  model?: string;
+  n?: number;
+  size?: ImageSize;
+  response_format?: ImageResponseFormat;
+  user?: string;
+}
+
+export interface ImageVariationRequest {
+  image: string;
+  model?: string;
+  n?: number;
+  size?: ImageSize;
+  response_format?: ImageResponseFormat;
+  user?: string;
+}
+
+// ---- Audio Types (OpenAI-Compatible) ----
+
+export type AudioResponseFormat = 'json' | 'text' | 'srt' | 'verbose_json' | 'vtt';
+
+export interface AudioTranscriptionRequest {
+  file: Uint8Array | ArrayBuffer | Blob | any;
+  filename?: string;
+  model?: string;
+  language?: string;
+  prompt?: string;
+  response_format?: AudioResponseFormat;
+  temperature?: number;
+  timestamp_granularities?: Array<'word' | 'segment'>;
+}
+
+export interface AudioTranscriptionResponse {
+  text: string;
+  task?: string;
+  language?: string;
+  duration?: number;
+  words?: Array<{ word: string; start: number; end: number }>;
+  segments?: Array<{
+    id: number;
+    seek: number;
+    start: number;
+    end: number;
+    text: string;
+    tokens: number[];
+    temperature: number;
+    avg_logprob: number;
+    compression_ratio: number;
+    no_speech_prob: number;
+  }>;
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+export interface AudioTranslationRequest {
+  file: Uint8Array | ArrayBuffer | Blob | any;
+  filename?: string;
+  model?: string;
+  prompt?: string;
+  response_format?: AudioResponseFormat;
+  temperature?: number;
+}
+
+export interface AudioTranslationResponse {
+  text: string;
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+export type AudioVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' | string;
+export type AudioSpeechFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+
+export interface AudioSpeechRequest {
+  model?: string;
+  input: string;
+  voice: AudioVoice;
+  response_format?: AudioSpeechFormat;
+  speed?: number;
+}
+
