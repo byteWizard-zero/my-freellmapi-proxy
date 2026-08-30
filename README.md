@@ -2,9 +2,9 @@
 
 # FreeLLMAPI
 
-**One OpenAI-compatible endpoint. Eleven free LLM providers. ~1B+ tokens per month.**
+**One OpenAI-compatible endpoint. Eleven free LLM providers. Multimodal Vision, Image Gen, and Audio Speech/STT. ~1B+ tokens per month.**
 
-Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, and Z.ai (Zhipu) behind a single `/v1/chat/completions` endpoint. Keys are stored encrypted. A router picks the best available model for each request, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
+Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Pollinations, and Z.ai (Zhipu) behind a unified OpenAI-compatible endpoint (`/v1/chat/completions`, `/v1/images/*`, `/v1/audio/*`). Keys are stored encrypted. An intelligent router picks the best available model for each request, handles multimodal inputs, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
 
 [![CI](https://github.com/byteWizard-zero/my-freellmapi-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/byteWizard-zero/my-freellmapi-proxy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
@@ -41,21 +41,21 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 
 <table>
 <tr>
-<td align="center" width="180"><a href="https://ai.google.dev"><b>Google</b><br/>Gemini 1.5/2.0 Flash · Flash-Lite · 3.x</a></td>
-<td align="center" width="180"><a href="https://groq.com"><b>Groq</b><br/>Llama 3.3, Llama 4, GPT-OSS, Qwen3</a></td>
+<td align="center" width="180"><a href="https://ai.google.dev"><b>Google</b><br/>Gemini 1.5/2.0/2.5 Flash · Imagen 3 · Gemini Audio</a></td>
+<td align="center" width="180"><a href="https://groq.com"><b>Groq</b><br/>Llama 3.3, Llama 4, Whisper Large v3 / Turbo</a></td>
 <td align="center" width="180"><a href="https://cerebras.ai"><b>Cerebras</b><br/>Qwen3 235B · Llama 3.1 8B</a></td>
 <td align="center" width="180"><a href="https://cloud.sambanova.ai"><b>SambaNova</b><br/>DeepSeek V3.x · Llama 4 · Gemma 3</a></td>
 </tr>
 <tr>
-<td align="center"><a href="https://mistral.ai"><b>Mistral</b><br/>Large 3 · Codestral · Small 3 · NeMo</a></td>
-<td align="center"><a href="https://openrouter.ai"><b>OpenRouter</b><br/>openrouter/free · 20+ free models</a></td>
+<td align="center"><a href="https://mistral.ai"><b>Mistral</b><br/>Large 3 · Codestral · Pixtral Vision · Small 3</a></td>
+<td align="center"><a href="https://openrouter.ai"><b>OpenRouter</b><br/>openrouter/free · 20+ free chat & vision models</a></td>
 <td align="center"><a href="https://github.com/marketplace/models"><b>GitHub Models</b><br/>GPT-4.1 · GPT-4o · GPT-4o mini</a></td>
-<td align="center"><a href="https://developers.cloudflare.com/workers-ai"><b>Cloudflare</b><br/>Kimi K2 · GLM-4.7 · GPT-OSS · Granite 4</a></td>
+<td align="center"><a href="https://developers.cloudflare.com/workers-ai"><b>Cloudflare Workers AI</b><br/>Flux 1 Schnell · SDXL · Whisper · Melo TTS</a></td>
 </tr>
 <tr>
+<td align="center"><a href="https://pollinations.ai"><b>Pollinations AI</b><br/>Flux (Image Gen) · Voice TTS (No key required)</a></td>
+<td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4 Flash · GLM-4V · GLM-4.5 · GLM-4.7</a></td>
 <td align="center"><a href="https://cohere.com"><b>Cohere</b><br/>Command R+ · Command-A (trial)</a></td>
-<td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4 Flash · GLM-4.5 · GLM-4.7</a></td>
-<td align="center"><a href="https://build.nvidia.com"><b>NVIDIA</b><br/>NIM (disabled by default)</a></td>
 <td align="center"><a href="https://moonshot.cn"><b>Moonshot AI (Kimi)</b><br/>Kimi 8k/32k/128k · K2.5/2.6/2.7</a></td>
 </tr>
 <tr>
@@ -65,7 +65,10 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 
 ## Features
 
-- **OpenAI-compatible** — `POST /v1/chat/completions` and `GET /v1/models` work with the official OpenAI SDKs and any OpenAI-compatible client (LangChain, LlamaIndex, Continue, Hermes, etc.). Just change `base_url`.
+- **OpenAI-compatible** — `POST /v1/chat/completions`, `POST /v1/images/*`, `POST /v1/audio/*`, and `GET /v1/models` work with the official OpenAI SDKs and any OpenAI-compatible client (LangChain, LlamaIndex, Continue, Hermes, etc.). Just change `base_url`.
+- **Multimodal Vision** — OpenAI-standard `image_url` format supported in `/v1/chat/completions` with automatic base64 conversion and dynamic vision-model routing.
+- **AI Image Generation & Edits (`/v1/images/*`)** — `POST /v1/images/generations`, `/v1/images/edits`, and `/v1/images/variations` with Pollinations Flux, Cloudflare Flux/SDXL, Google Imagen 3, and automatic zero-auth failover.
+- **Audio Transcription, Translation & Speech (`/v1/audio/*`)** — Speech-to-text (`/v1/audio/transcriptions`, `/v1/audio/translations`) via Groq Whisper Large v3 / Turbo, Cloudflare Whisper, and Gemini Audio. Neural text-to-speech synthesis (`/v1/audio/speech`) with voices (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`).
 - **Streaming and non-streaming** — Server-Sent Events for `stream: true`, JSON response otherwise. Every provider adapter implements both.
 - **Tool calling** — OpenAI-style `tools` / `tool_choice` requests are passed through, and assistant `tool_calls` + `tool` role follow-up messages round-trip across providers.
 - **Automatic fallover** — If the chosen provider returns a 429, 5xx, or times out, the router skips it, puts the key on a short cooldown, and retries on the next model in your fallback chain (up to 20 attempts).
@@ -75,20 +78,17 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Encrypted key storage** — API keys are encrypted with AES-256-GCM before hitting SQLite; decryption happens in-memory just before a request.
 - **Unified API key** — Clients authenticate to your proxy with a single `freellmapi-…` bearer token. You never expose upstream provider keys to your apps.
 - **Health checks** — Periodic probes mark keys as `healthy`, `rate_limited`, `invalid`, or `error` so the router skips dead ones automatically.
-- **Admin dashboard** — React + Vite UI to manage keys, reorder the fallback chain, inspect analytics, and run prompts in a playground. Dynamic dark mode and Slate-Emerald developer theme included.
-- **Dedicated Cooldowns Page** — Real-time tracking of sleeping keys in a separate tab in the navbar. It displays the platform, masked credentials, triggering model, exact error log, and active second-by-second countdown.
-- **Automatic Sibling Sync** — A helper CLI tool (`npm run sync-keys`) to scan adjacent repositories recursively and update their unified API key in `.env` configurations automatically.
+- **Playground & Media Studio** — React + Vite UI with dedicated tabs for **💬 Chat & Vision** (image drag/drop/paste), **🎨 Image Studio** (aspect ratio chips, gallery with lightbox & download), and **🎙️ Audio Lab** (live mic recording, Whisper STT viewer, TTS synthesizer).
+- **Dedicated Cooldowns Page** — Real-time tracking of sleeping keys with countdown timers and exact trigger errors.
+- **Automatic Sibling Sync** — CLI tool (`npm run sync-keys`) to scan adjacent repositories recursively and update their unified API key in `.env` configurations automatically.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
 - **Deploys to a Raspberry Pi** — Runs happily on a Pi 4 under PM2 behind nginx. ~40 MB RSS at idle.
 
 ## Not yet supported
 
-The scope is deliberately narrow. If a feature isn't on this list and isn't below, assume it isn't there yet.
+The scope is deliberately focused. If a feature isn't on this list and isn't below, assume it isn't there yet:
 
 - **Embeddings** (`/v1/embeddings`)
-- **Image generation** (`/v1/images/*`)
-- **Audio / speech** (`/v1/audio/*`)
-- **Vision / multimodal inputs** — message content is text-only
 - **Legacy completions** (`/v1/completions`) — only the chat endpoint is implemented
 - **Moderation** (`/v1/moderations`)
 - **`n > 1`** (multiple completions per request)
@@ -229,6 +229,65 @@ print(final.choices[0].message.content)
 ```
 
 Works with `stream=True` as well — you'll get `delta.tool_calls` chunks followed by a `finish_reason: "tool_calls"` close. Under the hood, OpenAI-compatible providers (Groq, Cerebras, SambaNova, Mistral, OpenRouter, GitHub Models, HuggingFace, Cloudflare, Cohere compat) get the request passed through; Gemini requests get translated into Google's `functionDeclarations` / `functionResponse` shape and the response is translated back.
+
+**Multimodal Vision**
+
+Pass image URLs or base64 data URLs in standard OpenAI content arrays. Requests with images are automatically routed to vision-capable models:
+
+```python
+resp = client.chat.completions.create(
+    model="auto",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe the contents of this image in detail."},
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+        ],
+    }],
+)
+print(resp.choices[0].message.content)
+```
+
+**Image Generation (`/v1/images/generations`)**
+
+Generate images with Pollinations Flux, Cloudflare Flux 1 Schnell / SDXL, and Google Imagen 3:
+
+```python
+img_resp = client.images.generate(
+    prompt="A futuristic electric hypercar speeding across a neon highway at twilight",
+    model="flux",
+    size="1024x1024",
+    response_format="b64_json",
+)
+# Access generated base64 or URL
+image_b64 = img_resp.data[0].b64_json
+```
+
+**Audio Transcription & Translation (`/v1/audio/*`)**
+
+Transcribe audio files or voice notes into text using Whisper Large v3 / Turbo:
+
+```python
+with open("voice_memo.mp3", "rb") as audio_file:
+    transcript = client.audio.transcriptions.create(
+        model="whisper-large-v3",
+        file=audio_file,
+    )
+print(transcript.text)
+```
+
+**Text-to-Speech (`/v1/audio/speech`)**
+
+Synthesize spoken audio from text with natural neural voices:
+
+```python
+speech_response = client.audio.speech.create(
+    model="tts-1",
+    voice="nova",
+    input="Hello! FreeLLMAPI now streams high-quality neural speech.",
+)
+speech_response.stream_to_file("output.mp3")
+```
 
 Every response carries an `X-Routed-Via: <platform>/<model>` header so you can see which provider actually served each call. If a request fell over between providers, you'll also see `X-Fallback-Attempts: N`.
 
