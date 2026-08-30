@@ -333,7 +333,8 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   }
 
   // Detect image-to-image styling/transformation or text-to-image intent directly in chat
-  const imageIntent = ImageSynthesisService.detectIntent(messages);
+  // Uses LLM-based classification — no hardcoded patterns
+  const imageIntent = await ImageSynthesisService.detectIntent(messages);
   if (imageIntent && !stream) {
     try {
       const synthesisResult = await ImageSynthesisService.executeSynthesis(imageIntent);
