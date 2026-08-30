@@ -83,6 +83,9 @@ export default function PlaygroundPage() {
   const [imageSize, setImageSize] = useState('1024x1024')
   const [imageModel, setImageModel] = useState('auto')
   const [imageLoading, setImageLoading] = useState(false)
+  const [imageRefUrl, setImageRefUrl] = useState<string | null>(null)
+  const [imageRefProcessing, setImageRefProcessing] = useState(false)
+  const imageRefInputRef = useRef<HTMLInputElement>(null)
   const [gallery, setGallery] = useState<GeneratedImage[]>(() => {
     const saved = localStorage.getItem('freellmapi_image_gallery')
     return saved ? JSON.parse(saved) : []
@@ -296,9 +299,28 @@ export default function PlaygroundPage() {
   }
 
   // ---- IMAGE STUDIO HANDLERS ----
+  const handleImageRefChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImageRefProcessing(true)
+    try {
+      const result = await processUniversalImage(file)
+      setImageRefUrl(result.dataUrl)
+    } catch (err: any) {
+      alert(`Failed to process reference image: ${err.message}`)
+    } finally {
+      setImageRefProcessing(false)
+    }
+  }
+
   const handleGenerateImage = async () => {
-    const prompt = imagePrompt.trim()
-    if (!prompt || imageLoading) return
+    const rawPrompt = imagePrompt.trim()
+    if (!rawPrompt || imageLoading) return
+
+    const effectivePrompt = imageRefUrl
+      ? `${rawPrompt}, high resolution, intricate details, masterpiece quality`
+      : rawPrompt
 
     setImageLoading(true)
     try {
@@ -310,7 +332,7 @@ export default function PlaygroundPage() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          prompt,
+          prompt: effectivePrompt,
           model: imageModel === 'auto' ? undefined : imageModel,
           size: imageSize,
           response_format: 'b64_json',
@@ -330,7 +352,7 @@ export default function PlaygroundPage() {
           id: `img-${Date.now()}`,
           url: item.url,
           b64_json: item.b64_json,
-          prompt,
+          prompt: effectivePrompt,
           platform: data._routed_via?.platform,
           model: data._routed_via?.model,
           createdAt: Date.now(),
@@ -792,23 +814,77 @@ export default function PlaygroundPage() {
               />
             </div>
 
-            {/* Quick Inspiration Prompts */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs text-muted-foreground">
-              <span className="shrink-0 text-[11px] font-medium">Try:</span>
-              {[
-                'Cyberpunk street market in neon rain, cinematic lighting, 8k',
-                'Hyperrealistic glass hummingbird drinking nectar from a crystal flower',
-                'Studio portrait of a futuristic cyber-astronaut with iridescent visor',
-                'Cozy Japanese tearoom overlooking a misty cherry blossom garden',
-              ].map((p, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setImagePrompt(p)}
-                  className="shrink-0 px-2.5 py-1 rounded-full border bg-muted/30 hover:bg-muted text-foreground text-[11px] transition-colors truncate max-w-[280px]"
-                >
-                  {p}
-                </button>
-              ))}
+            {/* Reference Image Attachment (for Image-to-Image / Style Transfer) */}
+            <div className="flex items-center gap-3">
+              <input
+                ref={imageRefInputRef}
+                type="file"
+                accept="image/*,.heic,.heif,.tiff,.bmp,.webp,.avif,.png,.jpg,.jpeg"
+                className="hidden"
+                onChange={handleImageRefChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => imageRefInputRef.current?.click()}
+                className="text-xs h-8 gap-1.5"
+              >
+                <Paperclip className="size-3.5 text-muted-foreground" />
+                <span>{imageRefUrl ? 'Change Reference Image' : 'Attach Reference Image (Style Transfer)'}</span>
+              </Button>
+
+              {imageRefProcessing && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin text-pink-500" />
+                  <span>Processing reference image…</span>
+                </div>
+              )}
+
+              {imageRefUrl && !imageRefProcessing && (
+                <div className="flex items-center gap-2 bg-muted/50 border rounded-lg px-2 py-1">
+                  <img src={imageRefUrl} alt="Ref" className="size-6 rounded object-cover border" />
+                  <span className="text-[11px] text-muted-foreground">Reference attached</span>
+                  <button
+                    onClick={() => setImageRefUrl(null)}
+                    className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Style Presets */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                <span>Style Presets:</span>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {[
+                  { label: 'Studio Ghibli 🍃', prompt: 'in authentic Studio Ghibli hand-drawn anime aesthetic, lush watercolor colors, Hayao Miyazaki masterpiece' },
+                  { label: 'Anime / Manga 🌸', prompt: 'in vibrant Japanese anime art style, crisp lineart, cel shaded, Makoto Shinkai lighting' },
+                  { label: 'Cyberpunk 🌆', prompt: 'in futuristic cyberpunk style, glowing neon lights, holographic reflections, moody atmosphere' },
+                  { label: 'Pixar 3D 🧸', prompt: 'in Disney Pixar 3D animation style, adorable character, volumetric studio lighting, 8k render' },
+                  { label: 'Watercolor 🎨', prompt: 'in delicate watercolor wash painting on textured cold-press paper, fluid soft pastel tones' },
+                  { label: 'Oil Painting 🖼️', prompt: 'in classic textured oil painting on canvas, visible rich impasto brushstrokes, dramatic chiaroscuro' },
+                  { label: '8k Photoreal 📸', prompt: 'award-winning 8k photorealistic portrait, 85mm f/1.4 lens bokeh, natural soft studio lighting' },
+                  { label: 'Vintage Comic 💥', prompt: 'in vintage Marvel/DC comic book illustration, dynamic ink outlines, retro halftones' },
+                ].map((s, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setImagePrompt(prev => {
+                        const clean = prev.replace(/in\s+[a-zA-Z\s]+style.*$/i, '').trim();
+                        return clean ? `${clean}, ${s.prompt}` : s.prompt;
+                      });
+                    }}
+                    className="shrink-0 px-2.5 py-1 rounded-md border bg-muted/40 hover:bg-muted text-foreground text-[11px] transition-colors"
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-4 pt-2 border-t flex-wrap">
