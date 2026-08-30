@@ -252,7 +252,7 @@ export default function PlaygroundPage() {
       }
 
       const data = await res.json()
-      const content = data.choices?.[0]?.message?.content ?? JSON.stringify(data, null, 2)
+      const content = data.choices?.[0]?.message?.content ?? (data.choices?.[0]?.message?.tool_calls ? '[Tool Call Requested]' : 'No text response returned by model.')
       const via = data._routed_via ?? (routedVia ? {
         platform: routedVia.split('/')[0],
         model: routedVia.split('/').slice(1).join('/'),
@@ -482,6 +482,45 @@ export default function PlaygroundPage() {
     }
   }
 
+  const renderMessageContent = (content: string) => {
+    if (!content) return null
+    const imageRegex = /!\[([^\]]*)\]\((data:image\/[^;]+;base64,[^)]+|https?:\/\/[^\s)]+)\)/g
+    const parts: React.ReactNode[] = []
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+
+    while ((match = imageRegex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index))
+      }
+      const alt = match[1] || 'Generated Image'
+      const src = match[2]
+      parts.push(
+        <div key={match.index} className="my-2 relative group inline-block max-w-full">
+          <img
+            src={src}
+            alt={alt}
+            className="max-h-72 max-w-full rounded-xl object-contain border shadow-sm cursor-pointer bg-black/5"
+            onClick={() => setLightboxImage(src)}
+          />
+          <div
+            onClick={() => setLightboxImage(src)}
+            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-medium gap-1 cursor-pointer"
+          >
+            <Eye className="size-4" /> View Full
+          </div>
+        </div>
+      )
+      lastIndex = imageRegex.lastIndex
+    }
+
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex))
+    }
+
+    return parts.length > 0 ? parts : content
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <PageHeader
@@ -623,7 +662,7 @@ export default function PlaygroundPage() {
                           </div>
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                      <div className="whitespace-pre-wrap">{renderMessageContent(msg.content)}</div>
                       {msg.meta && (
                         <div className="flex items-center gap-2 mt-2 flex-wrap text-[11px] opacity-70 tabular-nums border-t border-current/10 pt-1.5">
                           {msg.meta.platform && <span className="font-semibold uppercase tracking-wider">{msg.meta.platform}</span>}
