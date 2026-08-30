@@ -66,7 +66,7 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 ## Features
 
 - **OpenAI-compatible** — `POST /v1/chat/completions`, `POST /v1/images/*`, `POST /v1/audio/*`, and `GET /v1/models` work with the official OpenAI SDKs and any OpenAI-compatible client (LangChain, LlamaIndex, Continue, Hermes, etc.). Just change `base_url`.
-- **Multimodal Vision** — OpenAI-standard `image_url` format supported in `/v1/chat/completions` with automatic base64 conversion and dynamic vision-model routing.
+- **Multimodal Vision** — OpenAI-standard `image_url` format supported in `/v1/chat/completions` with universal image format transcoding (**HEIC**, **HEIF**, **TIFF**, **BMP**, **WebP**, **AVIF**, **PNG**, **JPEG**, **SVG**) and dynamic vision-model routing.
 - **AI Image Generation & Edits (`/v1/images/*`)** — `POST /v1/images/generations`, `/v1/images/edits`, and `/v1/images/variations` with Pollinations Flux, Cloudflare Flux/SDXL, Google Imagen 3, and automatic zero-auth failover.
 - **Audio Transcription, Translation & Speech (`/v1/audio/*`)** — Speech-to-text (`/v1/audio/transcriptions`, `/v1/audio/translations`) via Groq Whisper Large v3 / Turbo, Cloudflare Whisper, and Gemini Audio. Neural text-to-speech synthesis (`/v1/audio/speech`) with voices (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`).
 - **Streaming and non-streaming** — Server-Sent Events for `stream: true`, JSON response otherwise. Every provider adapter implements both.
