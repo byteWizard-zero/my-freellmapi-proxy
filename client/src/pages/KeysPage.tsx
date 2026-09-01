@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
-import { AlertCircle, Sparkles, ChevronDown, Loader2, AlertTriangle } from 'lucide-react'
-import type { ApiKey, Platform } from '../../../shared/types'
+import { AlertCircle, Sparkles, ChevronDown, Loader2, AlertTriangle, Shield, Key, Plus, Check, Copy } from 'lucide-react'
+import type { ApiKey, Platform, ClientApiKey, ClientApiKeyCreatedResponse } from '../../../shared/types'
 
 const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'google', label: 'Google AI Studio' },
@@ -29,18 +29,18 @@ const PLATFORMS: { value: Platform; label: string }[] = [
 ]
 
 export const PLATFORM_CAPABILITIES: Record<Platform, string[]> = {
-  google: ['Chat', 'Vision', 'Image Gen', 'Audio STT'],
-  cloudflare: ['Chat', 'Vision', 'Image Gen', 'Audio STT', 'Audio TTS'],
+  google: ['Chat', 'Vision', 'Image Gen', 'Audio STT', 'Embeddings', 'Moderation'],
+  cloudflare: ['Chat', 'Vision', 'Image Gen', 'Audio STT', 'Audio TTS', 'Embeddings', 'Moderation'],
   groq: ['Chat', 'Vision', 'Audio STT'],
   pollinations: ['Chat', 'Image Gen', 'Audio TTS'],
-  mistral: ['Chat', 'Vision'],
+  mistral: ['Chat', 'Vision', 'Embeddings'],
   openrouter: ['Chat', 'Vision'],
   github: ['Chat', 'Vision'],
   zhipu: ['Chat', 'Vision'],
   cerebras: ['Chat'],
   sambanova: ['Chat'],
   nvidia: ['Chat'],
-  cohere: ['Chat'],
+  cohere: ['Chat', 'Embeddings'],
   ollama: ['Chat'],
   kilo: ['Chat'],
   llm7: ['Chat'],
@@ -198,6 +198,235 @@ function UnifiedKeySection() {
           </div>
         </div>
       )}
+    </section>
+  )
+}
+
+function ClientKeysSection() {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState('')
+  const [rateLimitRpm, setRateLimitRpm] = useState(60)
+  const [monthlyTokenBudget, setMonthlyTokenBudget] = useState(1000000)
+  const [createdKeyData, setCreatedKeyData] = useState<ClientApiKeyCreatedResponse | null>(null)
+  const [copiedKey, setCopiedKey] = useState(false)
+
+  const { data, isLoading } = useQuery<{ keys: ClientApiKey[] }>({
+    queryKey: ['client-keys'],
+    queryFn: () => apiFetch('/api/client-keys'),
+  })
+
+  const createKey = useMutation({
+    mutationFn: (body: { name: string; rateLimitRpm: number; monthlyTokenBudget: number }) =>
+      apiFetch<ClientApiKeyCreatedResponse>('/api/client-keys', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (res) => {
+      setCreatedKeyData(res)
+      setName('')
+      queryClient.invalidateQueries({ queryKey: ['client-keys'] })
+    },
+  })
+
+  const deleteKey = useMutation({
+    mutationFn: (id: number) => apiFetch(`/api/client-keys/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['client-keys'] }),
+  })
+
+  const toggleKey = useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+      apiFetch(`/api/client-keys/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['client-keys'] }),
+  })
+
+  const keys = data?.keys ?? []
+
+  function copyKey(val: string) {
+    navigator.clipboard.writeText(val)
+    setCopiedKey(true)
+    setTimeout(() => setCopiedKey(false), 1500)
+  }
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    createKey.mutate({
+      name: name.trim(),
+      rateLimitRpm: Number(rateLimitRpm) || 60,
+      monthlyTokenBudget: Number(monthlyTokenBudget) || 1000000,
+    })
+  }
+
+  return (
+    <section className="rounded-lg border bg-card p-5 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <Shield className="size-4 text-primary" />
+            <h2 className="text-sm font-medium">Multi-tenant Client Keys & Token Budgets</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Issue isolated API keys for downstream apps, agents, or tenants with per-key RPM limits and monthly token quotas.
+          </p>
+        </div>
+      </div>
+
+      {/* Create Client Key Form */}
+      <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-muted/20 border p-3 rounded-lg">
+        <div className="space-y-1">
+          <Label className="text-xs">Client / App Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Mobile App, Discord Bot"
+            className="text-xs h-8"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Rate Limit (RPM)</Label>
+          <Input
+            type="number"
+            min={1}
+            max={10000}
+            value={rateLimitRpm}
+            onChange={(e) => setRateLimitRpm(Number(e.target.value))}
+            className="text-xs h-8"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Monthly Token Budget</Label>
+          <Input
+            type="number"
+            min={1000}
+            step={50000}
+            value={monthlyTokenBudget}
+            onChange={(e) => setMonthlyTokenBudget(Number(e.target.value))}
+            className="text-xs h-8"
+          />
+        </div>
+        <div className="flex items-end">
+          <Button
+            type="submit"
+            size="sm"
+            className="w-full h-8 gap-1.5 text-xs"
+            disabled={!name.trim() || createKey.isPending}
+          >
+            <Plus className="size-3.5" />
+            {createKey.isPending ? 'Generating…' : 'Create Client Key'}
+          </Button>
+        </div>
+      </form>
+
+      {/* New Key Alert Banner */}
+      {createdKeyData && (
+        <div className="p-3.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 space-y-2 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <Key className="size-3.5" /> Key Generated for "{createdKeyData.name}"
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setCreatedKeyData(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Copy this key now. For security reasons, it will never be displayed in full again.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 font-mono text-xs bg-background/80 px-2.5 py-1.5 rounded border select-all truncate text-foreground font-medium">
+              {createdKeyData.key}
+            </code>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => copyKey(createdKeyData.key)}
+              className="gap-1 text-xs"
+            >
+              {copiedKey ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+              {copiedKey ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Client Keys Table / List */}
+      <div className="space-y-2">
+        {isLoading ? (
+          <div className="py-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+            <Loader2 className="size-3.5 animate-spin text-primary" /> Loading client keys...
+          </div>
+        ) : keys.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+            No client keys created yet. Create one above to grant isolated API access with custom token budgets.
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            {keys.map((k) => {
+              const usagePercent = Math.min(100, Math.round((k.tokensUsed / (k.monthlyTokenBudget || 1)) * 100))
+              const isOverQuota = k.tokensUsed >= k.monthlyTokenBudget
+              return (
+                <div
+                  key={k.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border bg-background/50 hover:bg-background/80 transition-colors"
+                >
+                  <div className="space-y-1 min-w-[160px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-xs text-foreground">{k.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${k.enabled ? (isOverQuota ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20') : 'bg-muted text-muted-foreground'}`}>
+                        {!k.enabled ? 'Disabled' : isOverQuota ? 'Quota Exceeded' : 'Active'}
+                      </span>
+                    </div>
+                    <code className="text-[11px] font-mono text-muted-foreground">{k.prefix}••••••••</code>
+                  </div>
+
+                  <div className="flex-1 max-w-sm space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>{k.tokensUsed.toLocaleString()} / {k.monthlyTokenBudget.toLocaleString()} tokens</span>
+                      <span className="font-mono font-medium">{usagePercent}%</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${usagePercent >= 90 ? 'bg-rose-500' : usagePercent >= 70 ? 'bg-amber-500' : 'bg-primary'}`}
+                        style={{ width: `${usagePercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">
+                      {k.rateLimitRpm} RPM
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => toggleKey.mutate({ id: k.id, enabled: !k.enabled })}
+                      disabled={toggleKey.isPending}
+                    >
+                      {k.enabled ? 'Disable' : 'Enable'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteKey.mutate(k.id)}
+                      disabled={deleteKey.isPending}
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
@@ -379,6 +608,7 @@ export default function KeysPage() {
 
       <div className="space-y-8">
         <UnifiedKeySection />
+        <ClientKeysSection />
 
         <section>
           <h2 className="text-sm font-medium mb-3">Add a provider key</h2>

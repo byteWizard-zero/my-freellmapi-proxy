@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { processUniversalImage } from '@/lib/image-processor'
@@ -21,6 +22,10 @@ import {
   Radio,
   Eye,
   Loader2,
+  Binary,
+  ShieldAlert,
+  ShieldCheck,
+  Scale,
 } from 'lucide-react'
 
 interface FallbackEntry {
@@ -59,7 +64,7 @@ interface GeneratedImage {
 }
 
 export default function PlaygroundPage() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'images' | 'audio'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'images' | 'audio' | 'embeddings' | 'moderations'>('chat')
 
   // ---- CHAT & VISION STATE ----
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -70,6 +75,7 @@ export default function PlaygroundPage() {
   const [loading, setLoading] = useState(false)
   const [imageProcessing, setImageProcessing] = useState(false)
   const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('freellmapi_playground_model') || 'auto')
+  const [numChoices, setNumChoices] = useState<number>(1)
   const [disableFallback, setDisableFallback] = useState(() => localStorage.getItem('freellmapi_playground_disable_fallback') === 'true')
   const [enableWebSearch, setEnableWebSearch] = useState(() => localStorage.getItem('freellmapi_playground_web_search') === 'true')
   const [attachedImage, setAttachedImage] = useState<string | null>(null)
@@ -112,6 +118,22 @@ export default function PlaygroundPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<any>(null)
+
+  // ---- EMBEDDINGS STATE ----
+  const [embedText1, setEmbedText1] = useState('Machine learning and artificial intelligence.')
+  const [embedText2, setEmbedText2] = useState('Deep neural networks and LLMs.')
+  const [embedModel, setEmbedModel] = useState('text-embedding-004')
+  const [embedLoading, setEmbedLoading] = useState(false)
+  const [embedResult1, setEmbedResult1] = useState<number[] | null>(null)
+  const [embedResult2, setEmbedResult2] = useState<number[] | null>(null)
+  const [embedMeta, setEmbedMeta] = useState<any>(null)
+  const [similarityScore, setSimilarityScore] = useState<number | null>(null)
+
+  // ---- MODERATION STATE ----
+  const [modInput, setModInput] = useState('I love programming, building software, and learning new AI frameworks.')
+  const [modLoading, setModLoading] = useState(false)
+  const [modResult, setModResult] = useState<any>(null)
+  const [modMeta, setModMeta] = useState<any>(null)
 
   // Persist State
   useEffect(() => {
@@ -231,6 +253,7 @@ export default function PlaygroundPage() {
       const body: any = { messages: formattedMessages }
       if (selectedModel !== 'auto') body.model = selectedModel
       if (enableWebSearch) body.web_search = true
+      if (numChoices > 1) body.n = numChoices
 
       const base = import.meta.env.BASE_URL.replace(/\/$/, '')
       const start = Date.now()
@@ -255,23 +278,39 @@ export default function PlaygroundPage() {
       }
 
       const data = await res.json()
-      const content = data.choices?.[0]?.message?.content ?? (data.choices?.[0]?.message?.tool_calls ? '[Tool Call Requested]' : 'No text response returned by model.')
       const via = data._routed_via ?? (routedVia ? {
         platform: routedVia.split('/')[0],
         model: routedVia.split('/').slice(1).join('/'),
       } : undefined)
 
-      setMessages([...newMessages, {
-        role: 'assistant',
-        content,
-        meta: {
-          platform: via?.platform,
-          model: via?.model,
-          latency,
-          fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
-          webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
-        },
-      }])
+      const choices = data.choices || []
+      if (choices.length > 1) {
+        const choiceMsgs: ChatMessage[] = choices.map((c: any, i: number) => ({
+          role: 'assistant',
+          content: `**Choice ${i + 1} of ${choices.length}:**\n\n` + (c.message?.content ?? 'No content'),
+          meta: {
+            platform: via?.platform,
+            model: via?.model,
+            latency,
+            fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
+            webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
+          },
+        }))
+        setMessages([...newMessages, ...choiceMsgs])
+      } else {
+        const content = choices[0]?.message?.content ?? (choices[0]?.message?.tool_calls ? '[Tool Call Requested]' : 'No text response returned by model.')
+        setMessages([...newMessages, {
+          role: 'assistant',
+          content,
+          meta: {
+            platform: via?.platform,
+            model: via?.model,
+            latency,
+            fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
+            webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
+          },
+        }])
+      }
     } catch (err: any) {
       setMessages([...newMessages, {
         role: 'assistant',
@@ -504,6 +543,82 @@ export default function PlaygroundPage() {
     }
   }
 
+  function computeCosineSimilarity(a: number[], b: number[]): number {
+    if (!a || !b || a.length === 0 || b.length === 0) return 0
+    const len = Math.min(a.length, b.length)
+    let dot = 0
+    let normA = 0
+    let normB = 0
+    for (let i = 0; i < len; i++) {
+      dot += a[i] * b[i]
+      normA += a[i] * a[i]
+      normB += b[i] * b[i]
+    }
+    if (normA === 0 || normB === 0) return 0
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB))
+  }
+
+  const handleGenerateEmbeddings = async () => {
+    if (!embedText1.trim()) return
+    setEmbedLoading(true)
+    setEmbedResult1(null)
+    setEmbedResult2(null)
+    setSimilarityScore(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (keyData?.apiKey) headers['Authorization'] = `Bearer ${keyData.apiKey}`
+
+      const inputs = embedText2.trim() ? [embedText1.trim(), embedText2.trim()] : [embedText1.trim()]
+      const res = await apiFetch<any>('/v1/embeddings', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: embedModel,
+          input: inputs,
+        }),
+      })
+
+      const vec1 = res.data?.[0]?.embedding || null
+      const vec2 = res.data?.[1]?.embedding || null
+      setEmbedResult1(vec1)
+      setEmbedResult2(vec2)
+      setEmbedMeta(res._routed_via || { platform: 'auto', model: embedModel })
+
+      if (vec1 && vec2) {
+        setSimilarityScore(computeCosineSimilarity(vec1, vec2))
+      }
+    } catch (err: any) {
+      alert(`Embedding generation failed: ${err.message}`)
+    } finally {
+      setEmbedLoading(false)
+    }
+  }
+
+  const handleRunModeration = async () => {
+    if (!modInput.trim()) return
+    setModLoading(true)
+    setModResult(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (keyData?.apiKey) headers['Authorization'] = `Bearer ${keyData.apiKey}`
+
+      const res = await apiFetch<any>('/v1/moderations', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          input: modInput.trim(),
+        }),
+      })
+
+      setModResult(res.results?.[0] || null)
+      setModMeta(res._routed_via || { platform: 'auto', model: res.model })
+    } catch (err: any) {
+      alert(`Moderation check failed: ${err.message}`)
+    } finally {
+      setModLoading(false)
+    }
+  }
+
   const renderMessageContent = (content: string) => {
     if (!content) return null
     const imageRegex = /!\[([^\]]*)\]\((data:image\/[^;]+;base64,[^)]+|https?:\/\/[^\s)]+)\)/g
@@ -547,9 +662,9 @@ export default function PlaygroundPage() {
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <PageHeader
         title="Playground"
-        description="Test LLM text chat, multimodal vision, AI image generation, and audio speech/transcription."
+        description="Test LLM text chat, multimodal vision, AI image generation, vector embeddings, moderation, and audio."
         actions={
-          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg">
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg flex-wrap">
             <button
               onClick={() => setActiveTab('chat')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -582,6 +697,28 @@ export default function PlaygroundPage() {
             >
               <Volume2 className="size-3.5 text-blue-500" />
               <span>Audio Lab</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('embeddings')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'embeddings'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Binary className="size-3.5 text-emerald-500" />
+              <span>Embeddings</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('moderations')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'moderations'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ShieldAlert className="size-3.5 text-amber-500" />
+              <span>Moderation</span>
             </button>
           </div>
         }
@@ -638,6 +775,20 @@ export default function PlaygroundPage() {
                   <span>Pin model</span>
                 </label>
               )}
+
+              <div className="flex items-center gap-1.5 border rounded-md px-2.5 py-1 bg-background h-9 text-xs">
+                <span className="text-muted-foreground font-medium">n:</span>
+                <select
+                  value={numChoices}
+                  onChange={(e) => setNumChoices(Number(e.target.value))}
+                  className="bg-transparent text-xs font-mono font-medium focus:outline-none cursor-pointer text-foreground"
+                >
+                  <option value={1} className="bg-card text-foreground">1 choice</option>
+                  <option value={2} className="bg-card text-foreground">2 choices</option>
+                  <option value={3} className="bg-card text-foreground">3 choices</option>
+                  <option value={4} className="bg-card text-foreground">4 choices</option>
+                </select>
+              </div>
             </div>
 
             {messages.length > 0 && (
@@ -1319,6 +1470,241 @@ export default function PlaygroundPage() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================= TAB 4: EMBEDDINGS LAB ======================= */}
+      {activeTab === 'embeddings' && (
+        <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto">
+          <div className="flex items-center justify-between border-b pb-4 flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <Binary className="size-4 text-emerald-500" />
+                Vector Embeddings & Semantic Similarity
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Generate high-dimensional text embeddings across Google text-embedding-004, Mistral Embed, Cohere Embed, and Cloudflare BAAI BGE.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Model:</span>
+              <Select value={embedModel} onValueChange={(v) => setEmbedModel(v ?? 'text-embedding-004')}>
+                <SelectTrigger className="w-[230px] h-8 text-xs font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text-embedding-004">text-embedding-004 (Google)</SelectItem>
+                  <SelectItem value="mistral-embed">mistral-embed (Mistral)</SelectItem>
+                  <SelectItem value="embed-english-v3.0">embed-english-v3.0 (Cohere)</SelectItem>
+                  <SelectItem value="embed-multilingual-v3.0">embed-multilingual-v3.0 (Cohere)</SelectItem>
+                  <SelectItem value="@cf/baai/bge-base-en-v1.5">bge-base-en-v1.5 (Cloudflare)</SelectItem>
+                  <SelectItem value="@cf/baai/bge-large-en-v1.5">bge-large-en-v1.5 (Cloudflare)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Text Inputs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-foreground">Text Input 1</Label>
+              <textarea
+                value={embedText1}
+                onChange={(e) => setEmbedText1(e.target.value)}
+                placeholder="Enter first text string..."
+                rows={4}
+                className="w-full text-xs font-mono p-3 rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-foreground">Text Input 2 (Optional - for Cosine Similarity comparison)</Label>
+              <textarea
+                value={embedText2}
+                onChange={(e) => setEmbedText2(e.target.value)}
+                placeholder="Enter second text string to compute semantic similarity..."
+                rows={4}
+                className="w-full text-xs font-mono p-3 rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <Button
+              onClick={handleGenerateEmbeddings}
+              disabled={embedLoading || !embedText1.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-9 px-5 gap-2"
+            >
+              {embedLoading ? <Loader2 className="size-4 animate-spin" /> : <Binary className="size-4" />}
+              {embedLoading ? 'Generating Vectors…' : 'Generate Vector Embeddings'}
+            </Button>
+            {embedMeta && (
+              <span className="text-[11px] font-mono text-muted-foreground">
+                Routed via: {embedMeta.platform}/{embedMeta.model}
+              </span>
+            )}
+          </div>
+
+          {/* Similarity Score Card */}
+          {similarityScore !== null && (
+            <div className="p-4 rounded-lg border bg-emerald-500/5 border-emerald-500/20 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <Scale className="size-3.5" /> Cosine Semantic Similarity
+                </span>
+                <p className="text-[11px] text-muted-foreground">
+                  Computed between Vector 1 and Vector 2 (1.00 = identical meaning, 0.00 = orthogonal).
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                  {(similarityScore * 100).toFixed(2)}%
+                </div>
+                <span className="text-[10px] font-mono text-muted-foreground">score: {similarityScore.toFixed(4)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Embedding Vectors Preview */}
+          {embedResult1 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-lg border bg-background/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold font-mono text-muted-foreground">
+                    Vector 1 ({embedResult1.length} dimensions)
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(embedResult1))
+                      alert('Vector copied!')
+                    }}
+                    className="gap-1 text-xs"
+                  >
+                    <Copy className="size-3" /> Copy JSON
+                  </Button>
+                </div>
+                <pre className="text-[11px] font-mono bg-muted/40 p-3 rounded-md overflow-x-auto max-h-40 text-muted-foreground">
+                  [{embedResult1.slice(0, 10).map(n => n.toFixed(6)).join(', ')}, … {embedResult1.length - 10} more]
+                </pre>
+              </div>
+
+              {embedResult2 && (
+                <div className="p-4 rounded-lg border bg-background/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold font-mono text-muted-foreground">
+                      Vector 2 ({embedResult2.length} dimensions)
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(embedResult2))
+                        alert('Vector copied!')
+                      }}
+                      className="gap-1 text-xs"
+                    >
+                      <Copy className="size-3" /> Copy JSON
+                    </Button>
+                  </div>
+                  <pre className="text-[11px] font-mono bg-muted/40 p-3 rounded-md overflow-x-auto max-h-40 text-muted-foreground">
+                    [{embedResult2.slice(0, 10).map(n => n.toFixed(6)).join(', ')}, … {embedResult2.length - 10} more]
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================= TAB 5: MODERATION INSPECTOR ======================= */}
+      {activeTab === 'moderations' && (
+        <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto">
+          <div className="flex items-center justify-between border-b pb-4 flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <ShieldAlert className="size-4 text-amber-500" />
+                Content Moderation & Safety Guardrails
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Evaluates prompt text against OpenAI content safety categories (harassment, hate, self-harm, sexual, violence) using multi-provider models.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-foreground">Text to Inspect</Label>
+            <textarea
+              value={modInput}
+              onChange={(e) => setModInput(e.target.value)}
+              placeholder="Enter text to analyze for safety..."
+              rows={4}
+              className="w-full text-xs font-mono p-3 rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <Button
+              onClick={handleRunModeration}
+              disabled={modLoading || !modInput.trim()}
+              className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm h-9 px-5 gap-2"
+            >
+              {modLoading ? <Loader2 className="size-4 animate-spin" /> : <ShieldAlert className="size-4" />}
+              {modLoading ? 'Analyzing Content…' : 'Run Safety Moderation Check'}
+            </Button>
+            {modMeta && (
+              <span className="text-[11px] font-mono text-muted-foreground">
+                Evaluated via: {modMeta.platform}/{modMeta.model}
+              </span>
+            )}
+          </div>
+
+          {/* Moderation Results */}
+          {modResult && (
+            <div className="space-y-4">
+              <div className={`p-4 rounded-lg border flex items-center justify-between ${modResult.flagged ? 'bg-rose-500/10 border-rose-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
+                <div className="flex items-center gap-2">
+                  {modResult.flagged ? (
+                    <ShieldAlert className="size-5 text-rose-500" />
+                  ) : (
+                    <ShieldCheck className="size-5 text-emerald-500" />
+                  )}
+                  <div>
+                    <h3 className={`text-sm font-bold ${modResult.flagged ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      {modResult.flagged ? 'FLAGGED AS UNSAFE' : 'PASSED CONTENT SAFETY CHECK'}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {modResult.flagged ? 'This text violates content safety guidelines in one or more categories.' : 'No harmful or restricted content detected.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Category Scores Breakdown */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {Object.entries(modResult.category_scores || {}).map(([cat, score]) => {
+                  const numScore = typeof score === 'number' ? score : 0
+                  const isCatFlagged = Boolean(modResult.categories?.[cat])
+                  return (
+                    <div key={cat} className={`p-3 rounded-lg border bg-background/50 space-y-1.5 ${isCatFlagged ? 'border-rose-500/40 bg-rose-500/5' : ''}`}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono font-medium text-foreground capitalize">{cat}</span>
+                        <span className={`font-mono text-[11px] ${isCatFlagged ? 'text-rose-500 font-bold' : 'text-muted-foreground'}`}>
+                          {(numScore * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${isCatFlagged ? 'bg-rose-500' : numScore > 0.3 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${Math.max(4, numScore * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>
