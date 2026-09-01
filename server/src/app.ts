@@ -5,6 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { imagesRouter } from './routes/images.js';
 import { audioRouter } from './routes/audio.js';
+import { embeddingsRouter } from './routes/embeddings.js';
+import { completionsRouter } from './routes/completions.js';
+import { moderationsRouter } from './routes/moderations.js';
+import { clientKeysRouter } from './routes/client-keys.js';
 import { keysRouter } from './routes/keys.js';
 import { modelsRouter } from './routes/models.js';
 import { proxyRouter } from './routes/proxy.js';
@@ -33,6 +37,7 @@ export function createApp() {
 
   // API routes
   app.use('/api/keys', keysRouter);
+  app.use('/api/client-keys', clientKeysRouter);
   app.use('/api/models', modelsRouter);
   app.use('/api/fallback', fallbackRouter);
   app.use('/api/analytics', analyticsRouter);
@@ -41,6 +46,9 @@ export function createApp() {
   app.use('/api/logs', logsRouter);
 
   // OpenAI-compatible proxy & multimodal media routes
+  app.use('/v1/embeddings', embeddingsRouter);
+  app.use('/v1/completions', completionsRouter);
+  app.use('/v1/moderations', moderationsRouter);
   app.use('/v1/images', imagesRouter);
   app.use('/v1/audio', audioRouter);
   app.use('/v1', proxyRouter);

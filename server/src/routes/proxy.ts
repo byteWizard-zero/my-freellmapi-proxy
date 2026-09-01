@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { ChatMessage } from '@freellmapi/shared/types.js';
 import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
-import { getDb, getUnifiedApiKey } from '../db/index.js';
+import { getDb, getUnifiedApiKey, validateClientApiKey, recordClientKeyUsage } from '../db/index.js';
 import { WebSearchService } from '../services/websearch.js';
 import { normalizeImage } from '../lib/image-normalizer.js';
 import { ImageSynthesisService } from '../services/image-synthesis-service.js';
@@ -203,6 +203,7 @@ const chatCompletionSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
   top_p: z.number().min(0).max(1).optional(),
+  n: z.number().int().min(1).max(10).optional().default(1),
   stream: z.boolean().optional(),
   tools: z.array(toolDefinitionSchema).optional(),
   tool_choice: toolChoiceSchema.optional(),
@@ -261,14 +262,28 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   // If a future change enables `trust proxy`, this localhost bypass MUST be
   // re-evaluated.
   const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-  if (!isLocal) {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  let clientKeyId: number | undefined;
+
+  if (!isLocal || req.headers.authorization) {
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')?.trim();
     const unifiedKey = getUnifiedApiKey();
-    if (!token || !timingSafeStringEqual(token, unifiedKey)) {
+
+    if (!token) {
       res.status(401).json({
-        error: { message: 'Invalid API key', type: 'authentication_error' },
+        error: { message: 'Missing API key', type: 'authentication_error' },
       });
       return;
+    }
+
+    if (!timingSafeStringEqual(token, unifiedKey)) {
+      const clientAuth = validateClientApiKey(token);
+      if (!clientAuth.isValid || !clientAuth.clientKey) {
+        res.status(401).json({
+          error: { message: clientAuth.error || 'Invalid API key', type: 'authentication_error' },
+        });
+        return;
+      }
+      clientKeyId = clientAuth.clientKey.id;
     }
   }
 
@@ -284,7 +299,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { model: requestedModel, temperature, max_tokens, top_p, stream, tools, tool_choice, parallel_tool_calls, response_format } = parsed.data;
+  const { model: requestedModel, temperature, max_tokens, top_p, n, stream, tools, tool_choice, parallel_tool_calls, response_format } = parsed.data;
   const messages: ChatMessage[] = parsed.data.messages.map((m): ChatMessage => {
     if (m.role === 'assistant') {
       return {
@@ -491,6 +506,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           res.end();
 
           recordTokens(route.platform, route.modelId, route.keyId, estimatedInputTokens + totalOutputTokens);
+          if (clientKeyId) recordClientKeyUsage(clientKeyId, estimatedInputTokens + totalOutputTokens);
           recordSuccess(route.modelDbId);
           setStickyModel(messages, route.modelDbId);
           try {
@@ -518,13 +534,47 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           throw streamErr;
         }
       } else {
-        const result = await route.provider.chatCompletion(
-          route.apiKey, messages, route.modelId,
-          { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
-        );
+        let result: any;
+        if (n > 1) {
+          const completionPromises: Promise<any>[] = [];
+          for (let i = 0; i < n; i++) {
+            const effTemp = temperature !== undefined ? Math.min(2, temperature + i * 0.1) : undefined;
+            completionPromises.push(
+              route.provider.chatCompletion(
+                route.apiKey, messages, route.modelId,
+                { temperature: effTemp, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
+              )
+            );
+          }
+          const allResults = await Promise.all(completionPromises);
+          const firstResult = allResults[0];
+          const choices = allResults.flatMap((r, i) =>
+            (r.choices ?? []).map((c: any) => ({
+              ...c,
+              index: i,
+            }))
+          );
+          const promptTokens = firstResult.usage?.prompt_tokens ?? estimatedInputTokens;
+          const completionTokens = allResults.reduce((sum, r) => sum + (r.usage?.completion_tokens ?? 0), 0);
+          result = {
+            ...firstResult,
+            choices,
+            usage: {
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              total_tokens: promptTokens + completionTokens,
+            },
+          };
+        } else {
+          result = await route.provider.chatCompletion(
+            route.apiKey, messages, route.modelId,
+            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
+          );
+        }
 
         const totalTokens = result.usage?.total_tokens ?? 0;
         recordTokens(route.platform, route.modelId, route.keyId, totalTokens);
+        if (clientKeyId) recordClientKeyUsage(clientKeyId, totalTokens);
         recordSuccess(route.modelDbId);
         setStickyModel(messages, route.modelDbId);
         try {
@@ -538,7 +588,6 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
         res.json(result);
-
 
         logRequest(
           route.platform, route.modelId, 'success',
