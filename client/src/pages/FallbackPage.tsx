@@ -154,6 +154,10 @@ function SortableModelRow({
         return <span className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">Audio STT</span>
       case 'audio_tts':
         return <span className="text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-1.5 py-0.5 rounded font-mono font-medium">Audio TTS</span>
+      case 'embedding':
+        return <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-mono font-medium">Embedding</span>
+      case 'moderation':
+        return <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded font-mono font-medium">Moderation</span>
       default:
         return null
     }
@@ -198,6 +202,11 @@ function SortableModelRow({
               {entry.sizeLabel}
             </span>
           )}
+          {entry.keyCount === 0 && entry.platform !== 'pollinations' && (
+            <span className="text-[10px] bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded font-mono">
+              No Key
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
           {entry.rpmLimit && <span>{entry.rpmLimit} RPM</span>}
@@ -216,7 +225,8 @@ function SortableModelRow({
 export default function FallbackPage() {
   const queryClient = useQueryClient()
   const [localEntries, setLocalEntries] = useState<FallbackEntry[] | null>(null)
-  const [modalityFilter, setModalityFilter] = useState<'all' | 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts'>('all')
+  const [modalityFilter, setModalityFilter] = useState<'all' | 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts' | 'embedding' | 'moderation'>('all')
+  const [showUnconfigured, setShowUnconfigured] = useState(false)
 
   const { data: entries = [], isLoading } = useQuery<FallbackEntry[]>({
     queryKey: ['fallback'],
@@ -247,13 +257,15 @@ export default function FallbackPage() {
   })
 
   const allEntries = localEntries ?? entries
-  const configuredEntries = allEntries.filter(e => e.keyCount > 0)
-  const displayEntries = configuredEntries.filter(e => {
+  const visibleEntries = showUnconfigured
+    ? allEntries
+    : allEntries.filter(e => e.keyCount > 0 || e.platform === 'pollinations')
+  const displayEntries = visibleEntries.filter(e => {
     if (modalityFilter === 'all') return true
     if (modalityFilter === 'chat') return !e.modality || e.modality === 'chat'
     return e.modality === modalityFilter
   })
-  const unconfiguredPlatforms = [...new Set(allEntries.filter(e => e.keyCount === 0).map(e => e.platform))]
+  const unconfiguredPlatforms = [...new Set(allEntries.filter(e => e.keyCount === 0 && e.platform !== 'pollinations').map(e => e.platform))]
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -266,7 +278,7 @@ export default function FallbackPage() {
     const oldIndex = displayEntries.findIndex(e => e.modelDbId === active.id)
     const newIndex = displayEntries.findIndex(e => e.modelDbId === over.id)
     const reorderedVisible = arrayMove(displayEntries, oldIndex, newIndex)
-    const unconfigured = allEntries.filter(e => e.keyCount === 0)
+    const unconfigured = allEntries.filter(e => e.keyCount === 0 && e.platform !== 'pollinations')
     const merged = [
       ...reorderedVisible.map((e, i) => ({ ...e, priority: i + 1 })),
       ...unconfigured.map((e, i) => ({ ...e, priority: reorderedVisible.length + i + 1 })),
@@ -300,17 +312,32 @@ export default function FallbackPage() {
         title="Fallback chain"
         description="Drag to reorder. Requests try models top-to-bottom until one succeeds."
         actions={
-          <>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('intelligence')} disabled={sortMutation.isPending}>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sortMutation.mutate('intelligence')}
+              disabled={sortMutation.isPending}
+            >
               Sort by intelligence
             </Button>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('speed')} disabled={sortMutation.isPending}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sortMutation.mutate('speed')}
+              disabled={sortMutation.isPending}
+            >
               Sort by speed
             </Button>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('budget')} disabled={sortMutation.isPending}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sortMutation.mutate('budget')}
+              disabled={sortMutation.isPending}
+            >
               Sort by budget
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -319,28 +346,43 @@ export default function FallbackPage() {
           <TokenUsageBar data={tokenUsage} />
         )}
 
-        {/* Modality Filter Pills */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto">
-          {[
-            { id: 'all', label: 'All Models' },
-            { id: 'chat', label: '💬 Chat / LLM' },
-            { id: 'vision', label: '👁️ Vision' },
-            { id: 'image', label: '🎨 Image Gen' },
-            { id: 'audio_stt', label: '🎙️ Audio STT' },
-            { id: 'audio_tts', label: '🔊 Audio TTS' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setModalityFilter(tab.id as any)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
-                modalityFilter === tab.id
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Filter Controls Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Modality Filter Pills */}
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto">
+            {[
+              { id: 'all', label: 'All Models' },
+              { id: 'chat', label: '💬 Chat / LLM' },
+              { id: 'vision', label: '👁️ Vision' },
+              { id: 'image', label: '🎨 Image Gen' },
+              { id: 'audio_stt', label: '🎙️ Audio STT' },
+              { id: 'audio_tts', label: '🔊 Audio TTS' },
+              { id: 'embedding', label: '🔢 Embeddings' },
+              { id: 'moderation', label: '🛡️ Moderation' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setModalityFilter(tab.id as any)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                  modalityFilter === tab.id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer select-none border rounded-lg px-3 py-1.5 bg-muted/30 whitespace-nowrap self-start sm:self-auto">
+            <input
+              type="checkbox"
+              checked={showUnconfigured}
+              onChange={(e) => setShowUnconfigured(e.target.checked)}
+              className="rounded border-input text-primary focus:ring-ring size-3.5 cursor-pointer"
+            />
+            <span>Show unconfigured models</span>
+          </label>
         </div>
 
         {isLoading ? (
