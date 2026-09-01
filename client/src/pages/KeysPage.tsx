@@ -205,8 +205,8 @@ function UnifiedKeySection() {
 function ClientKeysSection() {
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
-  const [rateLimitRpm, setRateLimitRpm] = useState(60)
-  const [monthlyTokenBudget, setMonthlyTokenBudget] = useState(1000000)
+  const [rateLimitRpm, setRateLimitRpm] = useState('60')
+  const [monthlyTokenBudget, setMonthlyTokenBudget] = useState('1000000')
   const [createdKeyData, setCreatedKeyData] = useState<ClientApiKeyCreatedResponse | null>(null)
   const [copiedKey, setCopiedKey] = useState(false)
 
@@ -292,7 +292,8 @@ function ClientKeysSection() {
             min={1}
             max={10000}
             value={rateLimitRpm}
-            onChange={(e) => setRateLimitRpm(Number(e.target.value))}
+            onChange={(e) => setRateLimitRpm(e.target.value)}
+            placeholder="60"
             className="text-xs h-8"
           />
         </div>
@@ -303,7 +304,8 @@ function ClientKeysSection() {
             min={1000}
             step={50000}
             value={monthlyTokenBudget}
-            onChange={(e) => setMonthlyTokenBudget(Number(e.target.value))}
+            onChange={(e) => setMonthlyTokenBudget(e.target.value)}
+            placeholder="1000000"
             className="text-xs h-8"
           />
         </div>
