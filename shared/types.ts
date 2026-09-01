@@ -22,7 +22,7 @@ export type Platform =
   | 'llm7'
   | 'moonshot';
 
-export type ModelModality = 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts';
+export type ModelModality = 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts' | 'embedding' | 'moderation';
 
 export interface Model {
   id: number;
@@ -130,6 +130,7 @@ export interface ChatCompletionRequest {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  n?: number;
   stream?: boolean;
   top_p?: number;
   tools?: ChatToolDefinition[];
@@ -358,4 +359,170 @@ export interface AudioSpeechRequest {
   response_format?: AudioSpeechFormat;
   speed?: number;
 }
+
+// ---- Embedding Types (OpenAI-Compatible) ----
+
+export interface EmbeddingRequest {
+  input: string | string[];
+  model?: string;
+  encoding_format?: 'float' | 'base64';
+  dimensions?: number;
+  user?: string;
+}
+
+export interface EmbeddingData {
+  object: 'embedding';
+  index: number;
+  embedding: number[];
+}
+
+export interface EmbeddingResponse {
+  object: 'list';
+  data: EmbeddingData[];
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+// ---- Legacy Text Completion Types (OpenAI-Compatible) ----
+
+export interface CompletionRequest {
+  model?: string;
+  prompt: string | string[];
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  n?: number;
+  stream?: boolean;
+  logprobs?: number | null;
+  echo?: boolean;
+  stop?: string | string[];
+  user?: string;
+}
+
+export interface CompletionChoice {
+  text: string;
+  index: number;
+  logprobs: any | null;
+  finish_reason: string | null;
+}
+
+export interface CompletionResponse {
+  id: string;
+  object: 'text_completion';
+  created: number;
+  model: string;
+  choices: CompletionChoice[];
+  usage: TokenUsage;
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+export interface CompletionChunk {
+  id: string;
+  object: 'text_completion';
+  created: number;
+  model: string;
+  choices: {
+    text: string;
+    index: number;
+    logprobs: any | null;
+    finish_reason: string | null;
+  }[];
+}
+
+// ---- Moderation Types (OpenAI-Compatible) ----
+
+export interface ModerationCategories {
+  sexual: boolean;
+  'sexual/minors': boolean;
+  harassment: boolean;
+  'harassment/threatening': boolean;
+  hate: boolean;
+  'hate/threatening': boolean;
+  illicit: boolean;
+  'illicit/violent': boolean;
+  'self-harm': boolean;
+  'self-harm/intent': boolean;
+  'self-harm/instructions': boolean;
+  violence: boolean;
+  'violence/graphic': boolean;
+}
+
+export interface ModerationCategoryScores {
+  sexual: number;
+  'sexual/minors': number;
+  harassment: number;
+  'harassment/threatening': number;
+  hate: number;
+  'hate/threatening': number;
+  illicit: number;
+  'illicit/violent': number;
+  'self-harm': number;
+  'self-harm/intent': number;
+  'self-harm/instructions': number;
+  violence: number;
+  'violence/graphic': number;
+}
+
+export interface ModerationResult {
+  flagged: boolean;
+  categories: ModerationCategories;
+  category_scores: ModerationCategoryScores;
+  category_applied_input_types?: Record<string, string[]>;
+}
+
+export interface ModerationRequest {
+  input: string | string[];
+  model?: string;
+}
+
+export interface ModerationResponse {
+  id: string;
+  model: string;
+  results: ModerationResult[];
+  _routed_via?: {
+    platform: Platform;
+    model: string;
+  };
+}
+
+// ---- Multi-tenant Client API Key & Quota Types ----
+
+export interface ClientApiKey {
+  id: number;
+  name: string;
+  keyHash?: string;
+  prefix: string;
+  rateLimitRpm: number;
+  monthlyTokenBudget: number;
+  tokensUsed: number;
+  enabled: boolean;
+  createdAt: string;
+  lastUsedAt?: string | null;
+}
+
+export interface ClientApiKeyCreate {
+  name: string;
+  rateLimitRpm?: number;
+  monthlyTokenBudget?: number;
+}
+
+export interface ClientApiKeyCreatedResponse {
+  id: number;
+  name: string;
+  key: string;
+  prefix: string;
+  rateLimitRpm: number;
+  monthlyTokenBudget: number;
+}
+
 

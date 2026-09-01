@@ -52,6 +52,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV14(db);
   migrateModelsV15(db);
   migrateModelsV16(db);
+  migrateModelsV17(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
@@ -1264,10 +1265,74 @@ function migrateModelsV16(db: Database.Database) {
   console.log('[Migration V16] Vision, Image, and Audio models seeded and tagged successfully.');
 }
 
+function migrateModelsV17(db: Database.Database) {
+  // 1) Create client_api_keys table for multi-tenant auth and quota tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_api_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      prefix TEXT NOT NULL,
+      rate_limit_rpm INTEGER DEFAULT 60,
+      monthly_token_budget INTEGER DEFAULT 1000000,
+      tokens_used INTEGER DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_api_keys_hash ON client_api_keys(key_hash);
+  `);
 
+  // 2) Insert new Embedding models into models table
+  const insertModel = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, enabled, modality)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updateModality = db.prepare("UPDATE models SET modality = ? WHERE platform = ? AND model_id = ?");
 
+  const embeddingModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    ['google', 'text-embedding-004', 'Google Text Embedding 004', 1, 1, 'Embedding', 15, 1500, 1000000, null, '~100M', 2048, 1, 'embedding'],
+    ['mistral', 'mistral-embed', 'Mistral Embed', 2, 2, 'Embedding', 2, null, 500000, null, '~50M', 8192, 1, 'embedding'],
+    ['cohere', 'embed-english-v3.0', 'Cohere Embed English v3.0', 3, 2, 'Embedding', 20, 33, null, null, '~1-2M', 512, 1, 'embedding'],
+    ['cohere', 'embed-multilingual-v3.0', 'Cohere Embed Multilingual v3.0', 3, 2, 'Embedding', 20, 33, null, null, '~1-2M', 512, 1, 'embedding'],
+    ['cloudflare', '@cf/baai/bge-base-en-v1.5', 'Cloudflare BGE Base v1.5', 2, 2, 'Embedding', 10, 100, null, null, '~3,000 reqs', 512, 1, 'embedding'],
+    ['cloudflare', '@cf/baai/bge-large-en-v1.5', 'Cloudflare BGE Large v1.5', 1, 2, 'Embedding', 10, 100, null, null, '~3,000 reqs', 512, 1, 'embedding'],
+    ['cloudflare', '@cf/baai/bge-small-en-v1.5', 'Cloudflare BGE Small v1.5', 3, 1, 'Embedding', 10, 100, null, null, '~3,000 reqs', 512, 1, 'embedding'],
+  ];
 
+  for (const m of embeddingModels) {
+    insertModel.run(...m);
+    updateModality.run('embedding', m[0], m[1]);
+  }
 
+  // 3) Insert Moderation models
+  const moderationModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    ['google', 'gemini-safety', 'Google Safety Moderation', 1, 1, 'Moderation', 15, 1500, null, null, '~45,000 reqs', null, 1, 'moderation'],
+    ['cloudflare', '@cf/meta/llama-guard-3-8b', 'Cloudflare Llama Guard 3 8B', 2, 2, 'Moderation', 10, 100, null, null, '~3,000 reqs', null, 1, 'moderation'],
+  ];
+
+  for (const m of moderationModels) {
+    insertModel.run(...m);
+    updateModality.run('moderation', m[0], m[1]);
+  }
+
+  // 4) Ensure fallback_config is present
+  const missing = db.prepare(`
+    SELECT m.id FROM models m
+    LEFT JOIN fallback_config f ON m.id = f.model_db_id
+    WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC, m.id ASC
+  `).all() as { id: number }[];
+
+  if (missing.length > 0) {
+    const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+    const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+    for (let i = 0; i < missing.length; i++) {
+      addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  }
+
+  console.log('[Migration V17] Client API Keys, Embedding models, and Moderation models initialized successfully.');
+}
 
 function ensureUnifiedKey(db: Database.Database) {
   if (process.env.UNIFIED_API_KEY?.trim()) {
@@ -1305,3 +1370,125 @@ export function regenerateUnifiedKey(): string {
   saveUnifiedKeyToEnv(key);
   return key;
 }
+
+// ---- Client API Key Helper Functions ----
+
+export interface ClientKeyRow {
+  id: number;
+  name: string;
+  key_hash: string;
+  prefix: string;
+  rate_limit_rpm: number;
+  monthly_token_budget: number;
+  tokens_used: number;
+  enabled: number;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export function hashClientKey(rawKey: string): string {
+  return crypto.createHash('sha256').update(rawKey.trim()).digest('hex');
+}
+
+export function createClientApiKey(
+  name: string,
+  rateLimitRpm = 60,
+  monthlyTokenBudget = 1000000,
+): { id: number; name: string; key: string; prefix: string; rateLimitRpm: number; monthlyTokenBudget: number } {
+  const db = getDb();
+  const rawKey = `freellm-client-${crypto.randomBytes(24).toString('hex')}`;
+  const keyHash = hashClientKey(rawKey);
+  const prefix = `${rawKey.slice(0, 18)}...${rawKey.slice(-4)}`;
+
+  const stmt = db.prepare(`
+    INSERT INTO client_api_keys (name, key_hash, prefix, rate_limit_rpm, monthly_token_budget, tokens_used, enabled)
+    VALUES (?, ?, ?, ?, ?, 0, 1)
+  `);
+  const info = stmt.run(name.trim(), keyHash, prefix, rateLimitRpm, monthlyTokenBudget);
+
+  return {
+    id: Number(info.lastInsertRowid),
+    name: name.trim(),
+    key: rawKey,
+    prefix,
+    rateLimitRpm,
+    monthlyTokenBudget,
+  };
+}
+
+export function validateClientApiKey(rawKey: string): { isValid: boolean; clientKey?: ClientKeyRow; error?: string } {
+  const db = getDb();
+  const keyHash = hashClientKey(rawKey);
+  const row = db.prepare('SELECT * FROM client_api_keys WHERE key_hash = ?').get(keyHash) as ClientKeyRow | undefined;
+
+  if (!row) {
+    return { isValid: false, error: 'Invalid client API key' };
+  }
+
+  if (row.enabled !== 1) {
+    return { isValid: false, error: 'Client API key is disabled' };
+  }
+
+  if (row.monthly_token_budget > 0 && row.tokens_used >= row.monthly_token_budget) {
+    return { isValid: false, error: 'Monthly token budget exceeded for this API key' };
+  }
+
+  // Update last used timestamp
+  try {
+    db.prepare("UPDATE client_api_keys SET last_used_at = datetime('now') WHERE id = ?").run(row.id);
+  } catch (e) {
+    // Ignore update error
+  }
+
+  return { isValid: true, clientKey: row };
+}
+
+export function recordClientKeyUsage(clientKeyId: number, tokens: number): void {
+  if (tokens <= 0) return;
+  try {
+    const db = getDb();
+    db.prepare('UPDATE client_api_keys SET tokens_used = tokens_used + ? WHERE id = ?').run(tokens, clientKeyId);
+  } catch (e) {
+    console.error('[DB] Failed to record client key usage:', e);
+  }
+}
+
+export function listClientApiKeys(): Array<{
+  id: number;
+  name: string;
+  prefix: string;
+  rateLimitRpm: number;
+  monthlyTokenBudget: number;
+  tokensUsed: number;
+  enabled: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+}> {
+  const db = getDb();
+  const rows = db.prepare('SELECT id, name, prefix, rate_limit_rpm, monthly_token_budget, tokens_used, enabled, created_at, last_used_at FROM client_api_keys ORDER BY id DESC').all() as ClientKeyRow[];
+
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    prefix: r.prefix,
+    rateLimitRpm: r.rate_limit_rpm,
+    monthlyTokenBudget: r.monthly_token_budget,
+    tokensUsed: r.tokens_used,
+    enabled: r.enabled === 1,
+    createdAt: r.created_at,
+    lastUsedAt: r.last_used_at,
+  }));
+}
+
+export function deleteClientApiKey(id: number): boolean {
+  const db = getDb();
+  const info = db.prepare('DELETE FROM client_api_keys WHERE id = ?').run(id);
+  return info.changes > 0;
+}
+
+export function toggleClientApiKey(id: number, enabled: boolean): boolean {
+  const db = getDb();
+  const info = db.prepare('UPDATE client_api_keys SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id);
+  return info.changes > 0;
+}
+
