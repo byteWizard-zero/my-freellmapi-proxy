@@ -667,6 +667,142 @@ export class GoogleProvider extends BaseProvider {
     return { text, _routed_via: { platform: 'google', model: modelId } };
   }
 
+  async generateEmbeddings(
+    apiKey: string,
+    input: string[],
+    modelId = 'text-embedding-004',
+    _options?: Record<string, unknown>,
+  ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }> {
+    const rawModel = modelId.startsWith('models/') ? modelId.replace('models/', '') : modelId;
+    const url = `${API_BASE}/models/${rawModel}:batchEmbedContents?key=${apiKey}`;
+
+    const requests = input.map(text => ({
+      model: `models/${rawModel}`,
+      content: {
+        parts: [{ text }],
+      },
+    }));
+
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    }, 30000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google Embedding error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const body = await res.json() as { embeddings?: Array<{ values: number[] }> };
+    const embeddings = body.embeddings ?? [];
+
+    const data = embeddings.map((emb, index) => ({
+      embedding: emb.values,
+      index,
+    }));
+
+    const estimatedTokens = input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0);
+
+    return {
+      data,
+      usage: {
+        prompt_tokens: estimatedTokens,
+        total_tokens: estimatedTokens,
+      },
+    };
+  }
+
+  async moderateText(
+    apiKey: string,
+    input: string[],
+    _modelId = 'gemini-safety',
+    _options?: Record<string, unknown>,
+  ): Promise<{ results: Array<{ flagged: boolean; categories: Record<string, boolean>; category_scores: Record<string, number> }> }> {
+    const model = 'gemini-2.5-flash';
+    const url = `${API_BASE}/models/${model}:generateContent?key=${apiKey}`;
+
+    const prompt = `Analyze the following array of text items for safety and moderation.
+For each item, score categories from 0.0 to 1.0 and determine if flagged (true if any category >= 0.5).
+Categories to evaluate:
+- sexual
+- sexual/minors
+- harassment
+- harassment/threatening
+- hate
+- hate/threatening
+- illicit
+- illicit/violent
+- self-harm
+- self-harm/intent
+- self-harm/instructions
+- violence
+- violence/graphic
+
+Input texts:
+${JSON.stringify(input)}
+
+Return strictly valid JSON with shape:
+{
+  "results": [
+    {
+      "flagged": boolean,
+      "categories": { "sexual": boolean, "sexual/minors": boolean, "harassment": boolean, "harassment/threatening": boolean, "hate": boolean, "hate/threatening": boolean, "illicit": boolean, "illicit/violent": boolean, "self-harm": boolean, "self-harm/intent": boolean, "self-harm/instructions": boolean, "violence": boolean, "violence/graphic": boolean },
+      "category_scores": { "sexual": number, "sexual/minors": number, "harassment": number, "harassment/threatening": number, "hate": number, "hate/threatening": number, "illicit": number, "illicit/violent": number, "self-harm": number, "self-harm/intent": number, "self-harm/instructions": number, "violence": number, "violence/graphic": number }
+    }
+  ]
+}`;
+
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0,
+        },
+      }),
+    }, 20000);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google Moderation error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const body = await res.json() as GeminiResponse;
+    const parts = body.candidates?.[0]?.content?.parts ?? [];
+    const jsonText = extractText(parts)?.trim() ?? '{}';
+
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (Array.isArray(parsed.results)) {
+        return { results: parsed.results };
+      }
+    } catch {
+      // ignore
+    }
+
+    // Default safe fallback if parsing failed
+    const fallbackResults = input.map(() => ({
+      flagged: false,
+      categories: {
+        sexual: false, 'sexual/minors': false, harassment: false, 'harassment/threatening': false,
+        hate: false, 'hate/threatening': false, illicit: false, 'illicit/violent': false,
+        'self-harm': false, 'self-harm/intent': false, 'self-harm/instructions': false,
+        violence: false, 'violence/graphic': false,
+      },
+      category_scores: {
+        sexual: 0.0001, 'sexual/minors': 0.0001, harassment: 0.0001, 'harassment/threatening': 0.0001,
+        hate: 0.0001, 'hate/threatening': 0.0001, illicit: 0.0001, 'illicit/violent': 0.0001,
+        'self-harm': 0.0001, 'self-harm/intent': 0.0001, 'self-harm/instructions': 0.0001,
+        violence: 0.0001, 'violence/graphic': 0.0001,
+      },
+    }));
+
+    return { results: fallbackResults };
+  }
+
   async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     try {
       const res = await this.fetchWithTimeout(

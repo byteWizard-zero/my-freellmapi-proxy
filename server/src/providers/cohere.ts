@@ -105,6 +105,83 @@ export class CohereProvider extends BaseProvider {
     }
   }
 
+  async generateEmbeddings(
+    apiKey: string,
+    input: string[],
+    modelId = 'embed-english-v3.0',
+    options?: Record<string, unknown>,
+  ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }> {
+    // Try Cohere native embed endpoint first, fall back to compatibility embeddings
+    const url = 'https://api.cohere.com/v1/embed';
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        texts: input,
+        model: modelId,
+        input_type: options?.input_type ?? 'search_document',
+        embedding_types: ['float'],
+      }),
+    }, 20000);
+
+    if (!res.ok) {
+      // Try compatibility endpoint
+      const compatRes = await this.fetchWithTimeout(`${API_BASE}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelId,
+          input: input.length === 1 ? input[0] : input,
+        }),
+      }, 20000);
+
+      if (!compatRes.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Cohere Embedding error ${res.status}: ${(err as any).message ?? res.statusText}`);
+      }
+
+      const compatJson = await compatRes.json() as any;
+      const data = (compatJson.data ?? []).map((item: any, idx: number) => ({
+        embedding: item.embedding,
+        index: item.index !== undefined ? item.index : idx,
+      }));
+      const usage = compatJson.usage ?? {
+        prompt_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+        total_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+      };
+      return { data, usage };
+    }
+
+    const body = await res.json() as any;
+    let embeddings: number[][] = [];
+    if (body.embeddings && Array.isArray(body.embeddings.float)) {
+      embeddings = body.embeddings.float;
+    } else if (Array.isArray(body.embeddings)) {
+      embeddings = body.embeddings;
+    }
+
+    const data = embeddings.map((emb, index) => ({
+      embedding: emb,
+      index,
+    }));
+
+    const tokens = body.meta?.billed_units?.input_tokens ?? input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0);
+
+    return {
+      data,
+      usage: {
+        prompt_tokens: tokens,
+        total_tokens: tokens,
+      },
+    };
+  }
+
   async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     try {
       const res = await this.fetchWithTimeout(`${API_BASE}/models`, {

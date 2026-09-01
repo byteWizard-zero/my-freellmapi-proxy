@@ -226,8 +226,85 @@ export class CloudflareProvider extends BaseProvider {
 
     const arrayBuffer = await res.arrayBuffer();
     return {
-      audioBuffer: Buffer.from(arrayBuffer),
+    audioBuffer: Buffer.from(arrayBuffer),
       contentType: res.headers.get('content-type') || 'audio/mpeg',
+    };
+  }
+
+  async generateEmbeddings(
+    apiKey: string,
+    input: string[],
+    modelId = '@cf/baai/bge-base-en-v1.5',
+    options?: Record<string, unknown>,
+  ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }> {
+    const { accountId, token } = this.parseKey(apiKey);
+
+    // Try OpenAI-compatible embeddings endpoint first
+    const compatUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/embeddings`;
+    const res = await this.fetchWithTimeout(compatUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: modelId,
+        input: input.length === 1 ? input[0] : input,
+      }),
+    }, 25000);
+
+    if (res.ok) {
+      const json = await res.json() as any;
+      const data = (json.data ?? []).map((item: any, idx: number) => ({
+        embedding: item.embedding,
+        index: item.index !== undefined ? item.index : idx,
+      }));
+      const usage = json.usage ?? {
+        prompt_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+        total_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+      };
+      return { data, usage };
+    }
+
+    // Direct Workers AI run endpoint fallback
+    const directUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
+    const directRes = await this.fetchWithTimeout(directUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: input.length === 1 ? input[0] : input,
+      }),
+    }, 25000);
+
+    if (!directRes.ok) {
+      const err = await directRes.json().catch(() => ({}));
+      throw new Error(`Cloudflare Embedding error ${directRes.status}: ${(err as any).errors?.[0]?.message ?? directRes.statusText}`);
+    }
+
+    const body = await directRes.json() as any;
+    let embeddings: number[][] = [];
+    if (body.result && Array.isArray(body.result.data)) {
+      embeddings = body.result.data;
+    } else if (Array.isArray(body.result)) {
+      embeddings = body.result;
+    }
+
+    const data = embeddings.map((emb, index) => ({
+      embedding: emb,
+      index,
+    }));
+
+    const estimatedTokens = input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0);
+
+    return {
+      data,
+      usage: {
+        prompt_tokens: estimatedTokens,
+        total_tokens: estimatedTokens,
+      },
     };
   }
 

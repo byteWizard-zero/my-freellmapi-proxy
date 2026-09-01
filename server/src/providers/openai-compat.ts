@@ -354,6 +354,79 @@ export class OpenAICompatProvider extends BaseProvider {
     };
   }
 
+  async generateEmbeddings(
+    apiKey: string,
+    input: string[],
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }> {
+    const url = `${this.baseUrl}/embeddings`;
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...this.extraHeaders,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        input: input.length === 1 ? input[0] : input,
+        encoding_format: options?.encoding_format ?? 'float',
+        dimensions: options?.dimensions,
+        user: options?.user,
+      }),
+    }, this.timeoutMs);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`${this.name} Embedding error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const json = await res.json() as any;
+    const data = (json.data ?? []).map((item: any, idx: number) => ({
+      embedding: item.embedding,
+      index: item.index !== undefined ? item.index : idx,
+    }));
+
+    const usage = json.usage ?? {
+      prompt_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+      total_tokens: input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0),
+    };
+
+    return { data, usage };
+  }
+
+  async moderateText(
+    apiKey: string,
+    input: string[],
+    modelId = 'text-moderation-latest',
+    options?: Record<string, unknown>,
+  ): Promise<{ results: Array<{ flagged: boolean; categories: Record<string, boolean>; category_scores: Record<string, number> }> }> {
+    const url = `${this.baseUrl}/moderations`;
+    const res = await this.fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...this.extraHeaders,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        input: input.length === 1 ? input[0] : input,
+      }),
+    }, this.timeoutMs);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`${this.name} Moderation error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+    }
+
+    const json = await res.json() as any;
+    return {
+      results: json.results ?? [],
+    };
+  }
+
   async validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }> {
     const url = this.validateUrl ?? `${this.baseUrl}/models`;
     try {

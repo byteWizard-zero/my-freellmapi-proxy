@@ -73,6 +73,20 @@ export abstract class BaseProvider {
     options?: Record<string, unknown>,
   ): Promise<{ audioBuffer: Buffer; contentType: string }>;
 
+  generateEmbeddings?(
+    apiKey: string,
+    input: string[],
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }>;
+
+  moderateText?(
+    apiKey: string,
+    input: string[],
+    modelId: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ results: Array<{ flagged: boolean; categories: Record<string, boolean>; category_scores: Record<string, number> }> }>;
+
   protected async fetchWithTimeout(
     url: string,
     init: RequestInit,
