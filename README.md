@@ -65,7 +65,12 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 
 ## Features
 
-- **OpenAI-compatible** — `POST /v1/chat/completions`, `POST /v1/images/*`, `POST /v1/audio/*`, and `GET /v1/models` work with the official OpenAI SDKs and any OpenAI-compatible client (LangChain, LlamaIndex, Continue, Hermes, etc.). Just change `base_url`.
+- **OpenAI-compatible** — `POST /v1/chat/completions`, `POST /v1/completions`, `POST /v1/embeddings`, `POST /v1/moderations`, `POST /v1/images/*`, `POST /v1/audio/*`, and `GET /v1/models` work with the official OpenAI SDKs and any OpenAI-compatible client (LangChain, LlamaIndex, Continue, Hermes, etc.). Just change `base_url`.
+- **Vector Embeddings (`/v1/embeddings`)** — OpenAI-standard text embedding generation with multi-provider failover across Google `text-embedding-004`, Mistral `mistral-embed`, Cohere `embed-english-v3.0` / `embed-multilingual-v3.0`, and Cloudflare `bge-base` / `bge-large`.
+- **Legacy Text Completions (`/v1/completions`)** — Full support for legacy prompt completions with streaming SSE and non-streaming response generation.
+- **Content Moderation (`/v1/moderations`)** — Standard OpenAI content safety checks (hate, sexual, violence, self-harm, harassment) with provider integration and fallback safety analysis.
+- **Multiple Choices (`n > 1`)** — Request multiple completions per call (`n: 2..5`) with parallel execution and aggregated token usage tracking.
+- **Multi-tenant Auth & Client Token Budgets** — Issue isolated client API keys (`freellm-client-...`) for downstream applications, agents, or teams with custom RPM rate limits and monthly token budgets.
 - **Multimodal Vision** — OpenAI-standard `image_url` format supported in `/v1/chat/completions` with universal image format transcoding (**HEIC**, **HEIF**, **TIFF**, **BMP**, **WebP**, **AVIF**, **PNG**, **JPEG**, **SVG**) and dynamic vision-model routing.
 - **AI Image Generation & Edits (`/v1/images/*`)** — `POST /v1/images/generations`, `/v1/images/edits`, and `/v1/images/variations` with Pollinations Flux, Cloudflare Flux/SDXL, Google Imagen 3, and automatic zero-auth failover.
 - **Audio Transcription, Translation & Speech (`/v1/audio/*`)** — Speech-to-text (`/v1/audio/transcriptions`, `/v1/audio/translations`) via Groq Whisper Large v3 / Turbo, Cloudflare Whisper, and Gemini Audio. Neural text-to-speech synthesis (`/v1/audio/speech`) with voices (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`).
@@ -76,9 +81,9 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Per-key rate tracking** — RPM, RPD, TPM, and TPD counters per `(platform, model, key)` so the router always picks a key that's under its caps.
 - **Sticky sessions** — Multi-turn conversations keep talking to the same model for 30 minutes to avoid the hallucination spike that comes from mid-conversation model switches.
 - **Encrypted key storage** — API keys are encrypted with AES-256-GCM before hitting SQLite; decryption happens in-memory just before a request.
-- **Unified API key** — Clients authenticate to your proxy with a single `freellmapi-…` bearer token. You never expose upstream provider keys to your apps.
+- **Unified API key & Multi-tenant Keys** — Clients authenticate with the master key or dedicated client API keys with token limits.
 - **Health checks** — Periodic probes mark keys as `healthy`, `rate_limited`, `invalid`, or `error` so the router skips dead ones automatically.
-- **Playground & Media Studio** — React + Vite UI with dedicated tabs for **💬 Chat & Vision** (image drag/drop/paste), **🎨 Image Studio** (aspect ratio chips, gallery with lightbox & download), and **🎙️ Audio Lab** (live mic recording, Whisper STT viewer, TTS synthesizer).
+- **Playground & Media Studio** — React + Vite UI with dedicated tabs for **💬 Chat & Vision**, **🎨 Image Studio**, **🎙️ Audio Lab**, **🔢 Embeddings Lab** (with cosine similarity comparison), and **🛡️ Moderation Inspector**.
 - **Dedicated Cooldowns Page** — Real-time tracking of sleeping keys with countdown timers and exact trigger errors.
 - **Automatic Sibling Sync** — CLI tool (`npm run sync-keys`) to scan adjacent repositories recursively and update their unified API key in `.env` configurations automatically.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
@@ -88,11 +93,9 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 
 The scope is deliberately focused. If a feature isn't on this list and isn't below, assume it isn't there yet:
 
-- **Embeddings** (`/v1/embeddings`)
-- **Legacy completions** (`/v1/completions`) — only the chat endpoint is implemented
-- **Moderation** (`/v1/moderations`)
-- **`n > 1`** (multiple completions per request)
-- **Per-user billing / multi-tenant auth** — single-user by design
+- **Fine-tuning** (`/v1/fine_tuning/jobs`)
+- **OpenAI Assistants API / Threads** (legacy thread storage)
+- **Realtime WebRTC Audio API** (bi-directional low-latency audio stream)
 
 PRs that add any of these are very welcome. See [Contributing](#contributing).
 
@@ -287,6 +290,74 @@ speech_response = client.audio.speech.create(
     input="Hello! FreeLLMAPI now streams high-quality neural speech.",
 )
 speech_response.stream_to_file("output.mp3")
+```
+
+**Vector Embeddings (`/v1/embeddings`)**
+
+Generate dense vector representations for semantic search and retrieval across Google, Mistral, Cohere, and Cloudflare:
+
+```python
+embed_resp = client.embeddings.create(
+    model="text-embedding-004",  # or "auto", "mistral-embed", "embed-english-v3.0"
+    input=["Artificial intelligence and neural networks", "Machine learning models"],
+)
+for item in embed_resp.data:
+    print(f"Embedding index {item.index}: {len(item.embedding)} dimensions")
+```
+
+**Legacy Completions (`/v1/completions`)**
+
+Interact with classic prompt-style completion models with full streaming support:
+
+```python
+completion = client.completions.create(
+    model="auto",
+    prompt="Generate three creative company names for a quantum computing startup:\n1.",
+    max_tokens=60,
+    temperature=0.7,
+)
+print(completion.choices[0].text)
+```
+
+**Multiple Choices (`n > 1`)**
+
+Generate multiple independent completions in a single call:
+
+```python
+multi_choice = client.chat.completions.create(
+    model="auto",
+    messages=[{"role": "user", "content": "Write a short catchy tagline for a coffee shop."}],
+    n=3,
+)
+for i, choice in enumerate(multi_choice.choices):
+    print(f"Choice {i + 1}: {choice.message.content}")
+```
+
+**Content Moderation (`/v1/moderations`)**
+
+Run content safety evaluations with category scores and flags:
+
+```python
+mod_resp = client.moderations.create(
+    input="Check if this input text complies with content safety standards.",
+)
+print("Flagged:", mod_resp.results[0].flagged)
+print("Category scores:", mod_resp.results[0].category_scores)
+```
+
+**Client API Keys & Token Budgets (`/api/client-keys`)**
+
+Create isolated API tokens with custom RPM rate limits and monthly token budgets for downstream apps:
+
+```bash
+# Create a tenant key with 60 RPM limit and 1,000,000 monthly token quota
+curl http://localhost:3001/api/client-keys \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Discord Bot",
+    "rateLimitRpm": 60,
+    "monthlyTokenBudget": 1000000
+  }'
 ```
 
 Every response carries an `X-Routed-Via: <platform>/<model>` header so you can see which provider actually served each call. If a request fell over between providers, you'll also see `X-Fallback-Attempts: N`.
