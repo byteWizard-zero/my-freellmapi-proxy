@@ -122,7 +122,7 @@ export default function PlaygroundPage() {
   // ---- EMBEDDINGS STATE ----
   const [embedText1, setEmbedText1] = useState('Machine learning and artificial intelligence.')
   const [embedText2, setEmbedText2] = useState('Deep neural networks and LLMs.')
-  const [embedModel, setEmbedModel] = useState('text-embedding-004')
+  const [embedModel, setEmbedModel] = useState('auto')
   const [embedLoading, setEmbedLoading] = useState(false)
   const [embedResult1, setEmbedResult1] = useState<number[] | null>(null)
   const [embedResult2, setEmbedResult2] = useState<number[] | null>(null)
@@ -1485,17 +1485,19 @@ export default function PlaygroundPage() {
                 Vector Embeddings & Semantic Similarity
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Generate high-dimensional text embeddings across Google text-embedding-004, Mistral Embed, Cohere Embed, and Cloudflare BAAI BGE.
+                Generate high-dimensional text embeddings across Google Gemini, Mistral Embed, Cohere Embed, and Cloudflare BAAI BGE.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Model:</span>
-              <Select value={embedModel} onValueChange={(v) => setEmbedModel(v ?? 'text-embedding-004')}>
-                <SelectTrigger className="w-[230px] h-8 text-xs font-mono">
+              <Select value={embedModel} onValueChange={(v) => setEmbedModel(v ?? 'auto')}>
+                <SelectTrigger className="w-[240px] h-8 text-xs font-mono">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="text-embedding-004">text-embedding-004 (Google)</SelectItem>
+                  <SelectItem value="auto">auto (Smart Failover Router)</SelectItem>
+                  <SelectItem value="gemini-embedding-001">gemini-embedding-001 (Google)</SelectItem>
+                  <SelectItem value="text-embedding-004">text-embedding-004 (Google Legacy)</SelectItem>
                   <SelectItem value="mistral-embed">mistral-embed (Mistral)</SelectItem>
                   <SelectItem value="embed-english-v3.0">embed-english-v3.0 (Cohere)</SelectItem>
                   <SelectItem value="embed-multilingual-v3.0">embed-multilingual-v3.0 (Cohere)</SelectItem>

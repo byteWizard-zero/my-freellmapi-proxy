@@ -670,47 +670,92 @@ export class GoogleProvider extends BaseProvider {
   async generateEmbeddings(
     apiKey: string,
     input: string[],
-    modelId = 'text-embedding-004',
+    modelId = 'gemini-embedding-001',
     _options?: Record<string, unknown>,
   ): Promise<{ data: Array<{ embedding: number[]; index: number }>; usage: { prompt_tokens: number; total_tokens: number } }> {
     const rawModel = modelId.startsWith('models/') ? modelId.replace('models/', '') : modelId;
-    const url = `${API_BASE}/models/${rawModel}:batchEmbedContents?key=${apiKey}`;
+    const modelCandidates = [rawModel];
+    if (rawModel === 'text-embedding-004') {
+      modelCandidates.unshift('gemini-embedding-001');
+      modelCandidates.push('embedding-001');
+    } else if (rawModel === 'gemini-embedding-001') {
+      modelCandidates.push('text-embedding-004', 'embedding-001');
+    } else {
+      modelCandidates.push('gemini-embedding-001', 'text-embedding-004');
+    }
+    const uniqueCandidates = [...new Set(modelCandidates)];
 
-    const requests = input.map(text => ({
-      model: `models/${rawModel}`,
-      content: {
-        parts: [{ text }],
-      },
-    }));
+    let lastError: Error | null = null;
 
-    const res = await this.fetchWithTimeout(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requests }),
-    }, 30000);
+    for (const targetModel of uniqueCandidates) {
+      try {
+        // If single string input, try :embedContent first
+        if (input.length === 1) {
+          const singleUrl = `${API_BASE}/models/${targetModel}:embedContent?key=${apiKey}`;
+          const singleRes = await this.fetchWithTimeout(singleUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: `models/${targetModel}`,
+              content: { parts: [{ text: input[0] }] },
+            }),
+          }, 30000);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`Google Embedding error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+          if (singleRes.ok) {
+            const body = await singleRes.json() as { embedding?: { values: number[] } };
+            const values = body.embedding?.values ?? [];
+            const estimatedTokens = Math.ceil(input[0].length / 4);
+            return {
+              data: [{ embedding: values, index: 0 }],
+              usage: { prompt_tokens: estimatedTokens, total_tokens: estimatedTokens },
+            };
+          }
+        }
+
+        // Batch embed endpoint
+        const batchUrl = `${API_BASE}/models/${targetModel}:batchEmbedContents?key=${apiKey}`;
+        const requests = input.map(text => ({
+          model: `models/${targetModel}`,
+          content: {
+            parts: [{ text }],
+          },
+        }));
+
+        const res = await this.fetchWithTimeout(batchUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests }),
+        }, 30000);
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(`Google Embedding error ${res.status}: ${(err as any).error?.message ?? res.statusText}`);
+        }
+
+        const body = await res.json() as { embeddings?: Array<{ values: number[] }> };
+        const embeddings = body.embeddings ?? [];
+
+        const data = embeddings.map((emb, index) => ({
+          embedding: emb.values,
+          index,
+        }));
+
+        const estimatedTokens = input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0);
+
+        return {
+          data,
+          usage: {
+            prompt_tokens: estimatedTokens,
+            total_tokens: estimatedTokens,
+          },
+        };
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[GoogleProvider] Embedding model ${targetModel} attempt failed:`, err.message);
+      }
     }
 
-    const body = await res.json() as { embeddings?: Array<{ values: number[] }> };
-    const embeddings = body.embeddings ?? [];
-
-    const data = embeddings.map((emb, index) => ({
-      embedding: emb.values,
-      index,
-    }));
-
-    const estimatedTokens = input.reduce((acc, str) => acc + Math.ceil(str.length / 4), 0);
-
-    return {
-      data,
-      usage: {
-        prompt_tokens: estimatedTokens,
-        total_tokens: estimatedTokens,
-      },
-    };
+    throw lastError || new Error(`Failed to generate Google embeddings for ${modelId}`);
   }
 
   async moderateText(

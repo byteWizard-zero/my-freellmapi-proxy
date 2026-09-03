@@ -1291,6 +1291,7 @@ function migrateModelsV17(db: Database.Database) {
   const updateModality = db.prepare("UPDATE models SET modality = ? WHERE platform = ? AND model_id = ?");
 
   const embeddingModels: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    ['google', 'gemini-embedding-001', 'Google Gemini Embedding 001', 1, 1, 'Embedding', 15, 1500, 1000000, null, '~100M', 3072, 1, 'embedding'],
     ['google', 'text-embedding-004', 'Google Text Embedding 004', 1, 1, 'Embedding', 15, 1500, 1000000, null, '~100M', 2048, 1, 'embedding'],
     ['mistral', 'mistral-embed', 'Mistral Embed', 2, 2, 'Embedding', 2, null, 500000, null, '~50M', 8192, 1, 'embedding'],
     ['cohere', 'embed-english-v3.0', 'Cohere Embed English v3.0', 3, 2, 'Embedding', 20, 33, null, null, '~1-2M', 512, 1, 'embedding'],

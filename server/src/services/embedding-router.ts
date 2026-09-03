@@ -87,13 +87,17 @@ export class EmbeddingRouter {
       ORDER BY COALESCE(fc.priority, m.intelligence_rank) ASC
     `).all() as any[];
 
+    const primaryCandidates: EmbeddingRouteCandidate[] = [];
+    const fallbackCandidates: EmbeddingRouteCandidate[] = [];
+
     for (const m of embeddingModels) {
-      // If a specific model was requested (and not 'auto' or generic 'text-embedding-*'), match it
+      let isMatch = true;
       if (requestedModel && requestedModel !== 'auto' && !requestedModel.startsWith('text-embedding-3') && !requestedModel.startsWith('text-embedding-ada')) {
-        const match = m.model_id.toLowerCase() === requestedModel ||
+        isMatch = m.model_id.toLowerCase() === requestedModel ||
           m.model_id.toLowerCase().includes(requestedModel) ||
-          m.display_name.toLowerCase().includes(requestedModel);
-        if (!match) continue;
+          m.display_name.toLowerCase().includes(requestedModel) ||
+          (requestedModel === 'text-embedding-004' && m.model_id === 'gemini-embedding-001') ||
+          (requestedModel === 'gemini-embedding-001' && m.model_id === 'text-embedding-004');
       }
 
       const provider = getProvider(m.platform as Platform);
@@ -107,7 +111,7 @@ export class EmbeddingRouter {
       for (const k of keys) {
         try {
           const realKey = decrypt(k.encrypted_key, k.iv, k.auth_tag);
-          candidates.push({
+          const candidate: EmbeddingRouteCandidate = {
             platform: m.platform,
             modelId: m.model_id,
             displayName: m.display_name,
@@ -115,13 +119,18 @@ export class EmbeddingRouter {
             apiKey: realKey,
             keyId: k.id,
             modelDbId: m.id,
-          });
+          };
+          if (isMatch) {
+            primaryCandidates.push(candidate);
+          } else {
+            fallbackCandidates.push(candidate);
+          }
         } catch {
           // Ignore key decryption errors
         }
       }
     }
 
-    return candidates;
+    return [...primaryCandidates, ...fallbackCandidates];
   }
 }
