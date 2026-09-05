@@ -130,14 +130,27 @@ export interface ChatCompletionRequest {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  max_completion_tokens?: number;
   n?: number;
   stream?: boolean;
+  stream_options?: { include_usage?: boolean } | null;
   top_p?: number;
   tools?: ChatToolDefinition[];
   tool_choice?: ChatToolChoice;
   parallel_tool_calls?: boolean;
   web_search?: boolean | { max_results?: number };
   search?: boolean;
+  response_format?: { type: 'text' | 'json_object' | 'json_schema'; json_schema?: Record<string, unknown> };
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string | string[] | null;
+  logit_bias?: Record<string, number> | null;
+  logprobs?: boolean | null;
+  top_logprobs?: number | null;
+  seed?: number | null;
+  user?: string;
+  store?: boolean;
+  metadata?: Record<string, string> | null;
 }
 
 

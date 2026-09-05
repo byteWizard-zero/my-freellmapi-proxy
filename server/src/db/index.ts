@@ -53,6 +53,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV15(db);
   migrateModelsV16(db);
   migrateModelsV17(db);
+  migrateOpenAIParity(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
 
@@ -1493,3 +1494,264 @@ export function toggleClientApiKey(id: number, enabled: boolean): boolean {
   return info.changes > 0;
 }
 
+// ---- OpenAI API Parity Migration ----
+// Creates all tables needed for Files, Uploads, Stored Completions, Batches,
+// Assistants, Threads, Messages, Runs, Run Steps, Vector Stores, and Responses.
+
+function migrateOpenAIParity(db: Database.Database) {
+  // Files API
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS files (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'file',
+      bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      status_details TEXT,
+      storage_path TEXT NOT NULL
+    );
+  `);
+
+  // Uploads API (chunked uploads)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS uploads (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'upload',
+      bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at INTEGER NOT NULL,
+      file_id TEXT,
+      mime_type TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS upload_parts (
+      id TEXT PRIMARY KEY,
+      upload_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      part_index INTEGER NOT NULL,
+      storage_path TEXT NOT NULL
+    );
+  `);
+
+  // Stored Chat Completions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stored_completions (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'chat.completion',
+      created INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      choices TEXT NOT NULL,
+      usage TEXT,
+      system_fingerprint TEXT,
+      metadata TEXT DEFAULT '{}',
+      messages TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_stored_completions_created ON stored_completions(created);
+    CREATE INDEX IF NOT EXISTS idx_stored_completions_model ON stored_completions(model);
+  `);
+
+  // Batches API
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS batches (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'batch',
+      endpoint TEXT NOT NULL,
+      input_file_id TEXT NOT NULL,
+      completion_window TEXT NOT NULL DEFAULT '24h',
+      status TEXT NOT NULL DEFAULT 'validating',
+      output_file_id TEXT,
+      error_file_id TEXT,
+      created_at INTEGER NOT NULL,
+      in_progress_at INTEGER,
+      expires_at INTEGER,
+      finalizing_at INTEGER,
+      completed_at INTEGER,
+      failed_at INTEGER,
+      cancelled_at INTEGER,
+      request_counts_total INTEGER NOT NULL DEFAULT 0,
+      request_counts_completed INTEGER NOT NULL DEFAULT 0,
+      request_counts_failed INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT DEFAULT '{}',
+      errors TEXT DEFAULT '[]'
+    );
+  `);
+
+  // Assistants API v2
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assistants (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'assistant',
+      created_at INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      name TEXT,
+      description TEXT,
+      instructions TEXT,
+      tools TEXT NOT NULL DEFAULT '[]',
+      tool_resources TEXT,
+      metadata TEXT DEFAULT '{}',
+      temperature REAL DEFAULT 1.0,
+      top_p REAL DEFAULT 1.0,
+      response_format TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS threads (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'thread',
+      created_at INTEGER NOT NULL,
+      metadata TEXT DEFAULT '{}',
+      tool_resources TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS thread_messages (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'thread.message',
+      created_at INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      incomplete_details TEXT,
+      completed_at INTEGER,
+      incomplete_at INTEGER,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '[]',
+      attachments TEXT DEFAULT '[]',
+      run_id TEXT,
+      assistant_id TEXT,
+      metadata TEXT DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'thread.run',
+      created_at INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      assistant_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      required_action TEXT,
+      last_error TEXT,
+      model TEXT,
+      instructions TEXT,
+      tools TEXT DEFAULT '[]',
+      metadata TEXT DEFAULT '{}',
+      started_at INTEGER,
+      expires_at INTEGER,
+      cancelled_at INTEGER,
+      failed_at INTEGER,
+      completed_at INTEGER,
+      usage TEXT,
+      temperature REAL,
+      top_p REAL,
+      max_prompt_tokens INTEGER,
+      max_completion_tokens INTEGER,
+      response_format TEXT,
+      truncation_strategy TEXT,
+      tool_choice TEXT,
+      parallel_tool_calls INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_runs_thread ON runs(thread_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS run_steps (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'thread.run.step',
+      created_at INTEGER NOT NULL,
+      run_id TEXT NOT NULL,
+      assistant_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'in_progress',
+      step_details TEXT NOT NULL DEFAULT '{}',
+      last_error TEXT,
+      expired_at INTEGER,
+      cancelled_at INTEGER,
+      failed_at INTEGER,
+      completed_at INTEGER,
+      usage TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, created_at);
+  `);
+
+  // Vector Stores API
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vector_stores (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'vector_store',
+      created_at INTEGER NOT NULL,
+      name TEXT,
+      description TEXT,
+      usage_bytes INTEGER NOT NULL DEFAULT 0,
+      file_counts_total INTEGER NOT NULL DEFAULT 0,
+      file_counts_completed INTEGER NOT NULL DEFAULT 0,
+      file_counts_in_progress INTEGER NOT NULL DEFAULT 0,
+      file_counts_failed INTEGER NOT NULL DEFAULT 0,
+      file_counts_cancelled INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'completed',
+      expires_after TEXT,
+      expires_at INTEGER,
+      last_active_at INTEGER,
+      metadata TEXT DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS vector_store_files (
+      id TEXT PRIMARY KEY,
+      vector_store_id TEXT NOT NULL,
+      file_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'in_progress',
+      last_error TEXT,
+      chunking_strategy TEXT DEFAULT '{"type":"auto"}',
+      usage_bytes INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_vs_files_store ON vector_store_files(vector_store_id);
+
+    CREATE TABLE IF NOT EXISTS vector_store_file_batches (
+      id TEXT PRIMARY KEY,
+      vector_store_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'in_progress',
+      file_counts_total INTEGER NOT NULL DEFAULT 0,
+      file_counts_completed INTEGER NOT NULL DEFAULT 0,
+      file_counts_in_progress INTEGER NOT NULL DEFAULT 0,
+      file_counts_failed INTEGER NOT NULL DEFAULT 0,
+      file_counts_cancelled INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS vector_chunks (
+      id TEXT PRIMARY KEY,
+      vector_store_id TEXT NOT NULL,
+      file_id TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      embedding TEXT NOT NULL,
+      token_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_vector_chunks_store ON vector_chunks(vector_store_id);
+  `);
+
+  // Responses API
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS responses (
+      id TEXT PRIMARY KEY,
+      object TEXT NOT NULL DEFAULT 'response',
+      created_at INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      output TEXT NOT NULL DEFAULT '[]',
+      usage TEXT,
+      input TEXT,
+      instructions TEXT,
+      previous_response_id TEXT,
+      metadata TEXT DEFAULT '{}',
+      temperature REAL,
+      top_p REAL,
+      max_output_tokens INTEGER,
+      error TEXT
+    );
+  `);
+
+  console.log('[Migration] OpenAI API parity tables created');
+}
