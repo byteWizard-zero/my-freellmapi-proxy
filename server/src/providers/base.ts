@@ -20,6 +20,13 @@ export interface CompletionOptions {
     type: 'text' | 'json_object' | 'json_schema';
     json_schema?: Record<string, unknown>;
   };
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string | string[] | null;
+  logit_bias?: Record<string, number> | null;
+  logprobs?: boolean | null;
+  top_logprobs?: number | null;
+  seed?: number | null;
 }
 
 

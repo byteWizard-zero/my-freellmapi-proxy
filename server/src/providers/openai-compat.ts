@@ -61,6 +61,13 @@ export class OpenAICompatProvider extends BaseProvider {
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,
         response_format: options?.response_format,
+        frequency_penalty: options?.frequency_penalty,
+        presence_penalty: options?.presence_penalty,
+        stop: options?.stop,
+        logit_bias: options?.logit_bias,
+        logprobs: options?.logprobs,
+        top_logprobs: options?.top_logprobs,
+        seed: options?.seed,
       }),
     }, this.timeoutMs);
 
@@ -98,6 +105,13 @@ export class OpenAICompatProvider extends BaseProvider {
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,
         response_format: options?.response_format,
+        frequency_penalty: options?.frequency_penalty,
+        presence_penalty: options?.presence_penalty,
+        stop: options?.stop,
+        logit_bias: options?.logit_bias,
+        logprobs: options?.logprobs,
+        top_logprobs: options?.top_logprobs,
+        seed: options?.seed,
         stream: true,
       }),
     }, this.timeoutMs);

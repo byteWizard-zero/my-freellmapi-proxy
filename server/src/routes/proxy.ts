@@ -202,9 +202,13 @@ const chatCompletionSchema = z.object({
   model: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
+  max_completion_tokens: z.number().int().positive().optional(),
   top_p: z.number().min(0).max(1).optional(),
   n: z.number().int().min(1).max(10).optional().default(1),
   stream: z.boolean().optional(),
+  stream_options: z.object({
+    include_usage: z.boolean().optional(),
+  }).nullable().optional(),
   tools: z.array(toolDefinitionSchema).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
@@ -214,6 +218,16 @@ const chatCompletionSchema = z.object({
     type: z.enum(['text', 'json_object', 'json_schema']),
     json_schema: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
+  frequency_penalty: z.number().min(-2).max(2).optional(),
+  presence_penalty: z.number().min(-2).max(2).optional(),
+  stop: z.union([z.string(), z.array(z.string()).max(4)]).nullable().optional(),
+  logit_bias: z.record(z.string(), z.number().min(-100).max(100)).nullable().optional(),
+  logprobs: z.boolean().nullable().optional(),
+  top_logprobs: z.number().int().min(0).max(20).nullable().optional(),
+  seed: z.number().int().nullable().optional(),
+  user: z.string().optional(),
+  store: z.boolean().optional(),
+  metadata: z.record(z.string(), z.string()).nullable().optional(),
 });
 
 
@@ -299,7 +313,10 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { model: requestedModel, temperature, max_tokens, top_p, n, stream, tools, tool_choice, parallel_tool_calls, response_format } = parsed.data;
+  const { model: requestedModel, temperature, top_p, n, stream, tools, tool_choice, parallel_tool_calls, response_format,
+    frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed, user, store, metadata, stream_options,
+    max_completion_tokens } = parsed.data;
+  const max_tokens = parsed.data.max_tokens ?? parsed.data.max_completion_tokens;
   const messages: ChatMessage[] = parsed.data.messages.map((m): ChatMessage => {
     if (m.role === 'assistant') {
       return {
@@ -478,7 +495,8 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         try {
           const gen = route.provider.streamChatCompletion(
             route.apiKey, messages, route.modelId,
-            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
+            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
+              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
           );
 
           for await (const chunk of gen) {
@@ -501,6 +519,22 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
             if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
+          }
+          // Emit final usage chunk if stream_options.include_usage is true
+          if (stream_options?.include_usage) {
+            const usageChunk = {
+              id: `chatcmpl-${crypto.randomUUID()}`,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: route.modelId,
+              choices: [],
+              usage: {
+                prompt_tokens: estimatedInputTokens,
+                completion_tokens: totalOutputTokens,
+                total_tokens: estimatedInputTokens + totalOutputTokens,
+              },
+            };
+            res.write(`data: ${JSON.stringify(usageChunk)}\n\n`);
           }
           res.write('data: [DONE]\n\n');
           res.end();
@@ -542,7 +576,8 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
             completionPromises.push(
               route.provider.chatCompletion(
                 route.apiKey, messages, route.modelId,
-                { temperature: effTemp, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
+                { temperature: effTemp, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
+                  frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
               )
             );
           }
@@ -568,7 +603,8 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         } else {
           result = await route.provider.chatCompletion(
             route.apiKey, messages, route.modelId,
-            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format },
+            { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
+              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
           );
         }
 
@@ -588,6 +624,28 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
         res.json(result);
+
+        // Persist stored completions when store: true
+        if (store) {
+          try {
+            const db = getDb();
+            db.prepare(`
+              INSERT OR IGNORE INTO stored_completions (id, object, created, model, choices, usage, system_fingerprint, metadata, messages)
+              VALUES (?, 'chat.completion', ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              result.id,
+              result.created,
+              result.model,
+              JSON.stringify(result.choices),
+              JSON.stringify(result.usage),
+              result.system_fingerprint || null,
+              JSON.stringify(metadata || {}),
+              JSON.stringify(parsed.data.messages),
+            );
+          } catch (storeErr) {
+            console.error('[Proxy] Failed to store completion:', storeErr);
+          }
+        }
 
         logRequest(
           route.platform, route.modelId, 'success',
@@ -674,3 +732,186 @@ function logRequest(
     console.error('Failed to log request:', e);
   }
 }
+
+// ---- GET /v1/models/:model — Retrieve individual model ----
+proxyRouter.get('/models/:model', (req: Request, res: Response) => {
+  const modelId = req.params.model;
+  const db = getDb();
+  const row = db.prepare('SELECT platform, model_id, display_name, context_window FROM models WHERE model_id = ? AND enabled = 1').get(modelId) as any;
+  if (!row) {
+    res.status(404).json({
+      error: { message: `The model '${modelId}' does not exist`, type: 'invalid_request_error', code: 'model_not_found' },
+    });
+    return;
+  }
+  res.json({
+    id: row.model_id,
+    object: 'model',
+    created: 0,
+    owned_by: row.platform,
+  });
+});
+
+// ---- DELETE /v1/models/:model — Delete fine-tuned model (stub) ----
+proxyRouter.delete('/models/:model', (req: Request, res: Response) => {
+  res.json({
+    id: req.params.model,
+    object: 'model',
+    deleted: true,
+  });
+});
+
+// ---- Stored Chat Completions CRUD ----
+
+// GET /v1/chat/completions — List stored completions
+proxyRouter.get('/chat/completions', (req: Request, res: Response) => {
+  const db = getDb();
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
+  const after = req.query.after as string | undefined;
+  const model = req.query.model as string | undefined;
+
+  let query = 'SELECT * FROM stored_completions';
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  if (after) {
+    const afterRow = db.prepare('SELECT created FROM stored_completions WHERE id = ?').get(after) as any;
+    if (afterRow) {
+      conditions.push(order === 'DESC' ? 'created < ?' : 'created > ?');
+      params.push(afterRow.created);
+    }
+  }
+  if (model) {
+    conditions.push('model = ?');
+    params.push(model);
+  }
+
+  // Handle metadata filtering: metadata[key]=value query params
+  for (const key of Object.keys(req.query)) {
+    const match = key.match(/^metadata\[(.+)\]$/);
+    if (match) {
+      conditions.push(`json_extract(metadata, '$.' || ?) = ?`);
+      params.push(match[1], req.query[key] as string);
+    }
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+  query += ` ORDER BY created ${order} LIMIT ?`;
+  params.push(limit + 1);
+
+  const rows = db.prepare(query).all(...params) as any[];
+  const hasMore = rows.length > limit;
+  const data = rows.slice(0, limit).map(r => ({
+    id: r.id,
+    object: r.object,
+    created: r.created,
+    model: r.model,
+    choices: JSON.parse(r.choices),
+    usage: r.usage ? JSON.parse(r.usage) : null,
+    system_fingerprint: r.system_fingerprint,
+    metadata: r.metadata ? JSON.parse(r.metadata) : {},
+  }));
+
+  res.json({
+    object: 'list',
+    data,
+    first_id: data.length > 0 ? data[0].id : null,
+    last_id: data.length > 0 ? data[data.length - 1].id : null,
+    has_more: hasMore,
+  });
+});
+
+// GET /v1/chat/completions/:completion_id — Retrieve stored completion
+proxyRouter.get('/chat/completions/:completion_id', (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM stored_completions WHERE id = ?').get(req.params.completion_id) as any;
+  if (!row) {
+    res.status(404).json({
+      error: { message: 'Chat completion not found', type: 'invalid_request_error' },
+    });
+    return;
+  }
+  res.json({
+    id: row.id,
+    object: row.object,
+    created: row.created,
+    model: row.model,
+    choices: JSON.parse(row.choices),
+    usage: row.usage ? JSON.parse(row.usage) : null,
+    system_fingerprint: row.system_fingerprint,
+    metadata: row.metadata ? JSON.parse(row.metadata) : {},
+  });
+});
+
+// POST /v1/chat/completions/:completion_id — Modify metadata
+proxyRouter.post('/chat/completions/:completion_id', (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM stored_completions WHERE id = ?').get(req.params.completion_id) as any;
+  if (!row) {
+    res.status(404).json({
+      error: { message: 'Chat completion not found', type: 'invalid_request_error' },
+    });
+    return;
+  }
+  if (req.body.metadata) {
+    db.prepare('UPDATE stored_completions SET metadata = ? WHERE id = ?').run(
+      JSON.stringify(req.body.metadata),
+      req.params.completion_id,
+    );
+  }
+  const updated = db.prepare('SELECT * FROM stored_completions WHERE id = ?').get(req.params.completion_id) as any;
+  res.json({
+    id: updated.id,
+    object: updated.object,
+    created: updated.created,
+    model: updated.model,
+    choices: JSON.parse(updated.choices),
+    usage: updated.usage ? JSON.parse(updated.usage) : null,
+    system_fingerprint: updated.system_fingerprint,
+    metadata: updated.metadata ? JSON.parse(updated.metadata) : {},
+  });
+});
+
+// DELETE /v1/chat/completions/:completion_id — Delete stored completion
+proxyRouter.delete('/chat/completions/:completion_id', (req: Request, res: Response) => {
+  const db = getDb();
+  const info = db.prepare('DELETE FROM stored_completions WHERE id = ?').run(req.params.completion_id);
+  if (info.changes === 0) {
+    res.status(404).json({
+      error: { message: 'Chat completion not found', type: 'invalid_request_error' },
+    });
+    return;
+  }
+  res.json({
+    id: req.params.completion_id,
+    object: 'chat.completion.deleted',
+    deleted: true,
+  });
+});
+
+// GET /v1/chat/completions/:completion_id/messages — Get input messages
+proxyRouter.get('/chat/completions/:completion_id/messages', (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare('SELECT messages FROM stored_completions WHERE id = ?').get(req.params.completion_id) as any;
+  if (!row) {
+    res.status(404).json({
+      error: { message: 'Chat completion not found', type: 'invalid_request_error' },
+    });
+    return;
+  }
+  const messages = JSON.parse(row.messages);
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  const order = req.query.order === 'asc' ? messages : [...messages].reverse();
+  const data = order.slice(0, limit);
+
+  res.json({
+    object: 'list',
+    data,
+    first_id: data.length > 0 ? `msg-0` : null,
+    last_id: data.length > 0 ? `msg-${data.length - 1}` : null,
+    has_more: order.length > limit,
+  });
+});
