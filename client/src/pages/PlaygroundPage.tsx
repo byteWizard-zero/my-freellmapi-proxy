@@ -50,6 +50,8 @@ interface ChatMessage {
     latency?: number
     fallbackAttempts?: number
     webSearchExecuted?: boolean
+    cached?: boolean
+    workloadCategory?: string
   }
 }
 
@@ -267,6 +269,8 @@ export default function PlaygroundPage() {
       const routedVia = res.headers.get('X-Routed-Via')
       const webSearchHeader = res.headers.get('X-Web-Search')
       const fallbackAttempts = res.headers.get('X-Fallback-Attempts')
+      const cacheHeader = res.headers.get('X-Cache')
+      const workloadCategory = res.headers.get('X-Workload-Category')
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }))
@@ -294,6 +298,8 @@ export default function PlaygroundPage() {
             latency,
             fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
             webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
+            cached: cacheHeader === 'HIT',
+            workloadCategory: workloadCategory || undefined,
           },
         }))
         setMessages([...newMessages, ...choiceMsgs])
@@ -308,6 +314,8 @@ export default function PlaygroundPage() {
             latency,
             fallbackAttempts: fallbackAttempts ? parseInt(fallbackAttempts) : undefined,
             webSearchExecuted: webSearchHeader === 'executed' || enableWebSearch,
+            cached: cacheHeader === 'HIT',
+            workloadCategory: workloadCategory || undefined,
           },
         }])
       }
@@ -841,6 +849,8 @@ export default function PlaygroundPage() {
                           {msg.meta.platform && <span className="font-semibold uppercase tracking-wider">{msg.meta.platform}</span>}
                           {msg.meta.model && <span className="font-mono">· {msg.meta.model}</span>}
                           {msg.meta.latency != null && <span>· {msg.meta.latency} ms</span>}
+                          {msg.meta.cached && <span className="text-emerald-500 font-semibold">· ⚡ Cached</span>}
+                          {msg.meta.workloadCategory && <span className="text-purple-400 font-mono font-medium">· 🏷️ {msg.meta.workloadCategory}</span>}
                           {msg.meta.webSearchExecuted && <span className="text-emerald-500 font-medium">· 🌐 Grounded</span>}
                           {msg.meta.fallbackAttempts != null && msg.meta.fallbackAttempts > 0 && (
                             <span>· {msg.meta.fallbackAttempts} fallback{msg.meta.fallbackAttempts > 1 ? 's' : ''}</span>

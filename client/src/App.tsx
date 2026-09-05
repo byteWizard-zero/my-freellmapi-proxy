@@ -8,6 +8,7 @@ import FallbackPage from '@/pages/FallbackPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
 import CooldownsPage from '@/pages/CooldownsPage'
 import LogsPage from '@/pages/LogsPage'
+import ClientKeysPage from '@/pages/ClientKeysPage'
 
 const queryClient = new QueryClient()
 
@@ -78,7 +79,8 @@ function App() {
               <Brand />
               <nav className="flex items-center gap-6 ml-10">
                 <NavItem to="/playground">Playground</NavItem>
-                <NavItem to="/keys">Keys</NavItem>
+                <NavItem to="/project-keys">Project Keys</NavItem>
+                <NavItem to="/keys">Provider Keys</NavItem>
                 <NavItem to="/cooldowns">Cooldowns</NavItem>
                 <NavItem to="/fallback">Fallback</NavItem>
                 <NavItem to="/analytics">Analytics</NavItem>
@@ -93,6 +95,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/playground" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
+              <Route path="/project-keys" element={<ClientKeysPage />} />
               <Route path="/keys" element={<KeysPage />} />
               <Route path="/cooldowns" element={<CooldownsPage />} />
               <Route path="/fallback" element={<FallbackPage />} />
