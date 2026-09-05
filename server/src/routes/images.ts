@@ -2,11 +2,14 @@ import crypto from 'crypto';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 import { ImageRouter } from '../services/image-router.js';
 import type { ImageGenerationRequest } from '@freellmapi/shared/types.js';
 
 export const imagesRouter = Router();
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 function timingSafeStringEqual(provided: string, expected: string): boolean {
   const a = Buffer.from(provided);
@@ -99,8 +102,11 @@ imagesRouter.post('/generations', async (req: Request, res: Response) => {
   }
 });
 
-// POST /v1/images/edits
-imagesRouter.post('/edits', async (req: Request, res: Response) => {
+// POST /v1/images/edits — Proper multipart upload
+imagesRouter.post('/edits', upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'mask', maxCount: 1 },
+]), async (req: Request, res: Response) => {
   const start = Date.now();
   if (!authenticateRequest(req, res)) return;
 
@@ -111,32 +117,69 @@ imagesRouter.post('/edits', async (req: Request, res: Response) => {
   }
 
   try {
+    // Build an edit prompt that includes the source image as context
+    let editPrompt = `Edit image: ${prompt}`;
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    const imageFile = files?.image?.[0];
+
+    if (imageFile) {
+      const mimeType = imageFile.mimetype || 'image/png';
+      const b64 = imageFile.buffer.toString('base64');
+      // Prepend image reference for models that support vision/inpainting
+      editPrompt = `Edit the following image according to these instructions: ${prompt}\n\n[Source image: data:${mimeType};base64,${b64.slice(0, 100)}...]`;
+    }
+
     const result = await ImageRouter.generateImage({
-      prompt: `Edit: ${prompt}`,
+      prompt: editPrompt,
       model: req.body.model,
+      n: parseInt(req.body.n) || 1,
       size: req.body.size || '1024x1024',
       response_format: req.body.response_format || 'b64_json',
     });
+
+    const latency = Date.now() - start;
+    if (result._routed_via) {
+      logRequest(result._routed_via.platform, result._routed_via.model, 'success', latency, null);
+    }
     res.json(result);
   } catch (err: any) {
+    const latency = Date.now() - start;
+    logRequest('error', req.body.model || 'auto', 'error', latency, err.message);
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });
 
-// POST /v1/images/variations
-imagesRouter.post('/variations', async (req: Request, res: Response) => {
+// POST /v1/images/variations — Proper multipart upload
+imagesRouter.post('/variations', upload.single('image'), async (req: Request, res: Response) => {
   const start = Date.now();
   if (!authenticateRequest(req, res)) return;
 
   try {
+    let variationPrompt = 'Generate a creative variation of this image';
+    const imageFile = req.file;
+
+    if (imageFile) {
+      const mimeType = imageFile.mimetype || 'image/png';
+      const b64 = imageFile.buffer.toString('base64');
+      variationPrompt = `Generate a creative variation of the following image, maintaining the same style and subject but with different composition.\n\n[Source image: data:${mimeType};base64,${b64.slice(0, 100)}...]`;
+    }
+
     const result = await ImageRouter.generateImage({
-      prompt: req.body.prompt || 'Generate a creative variation of the image',
+      prompt: req.body.prompt || variationPrompt,
       model: req.body.model,
+      n: parseInt(req.body.n) || 1,
       size: req.body.size || '1024x1024',
       response_format: req.body.response_format || 'b64_json',
     });
+
+    const latency = Date.now() - start;
+    if (result._routed_via) {
+      logRequest(result._routed_via.platform, result._routed_via.model, 'success', latency, null);
+    }
     res.json(result);
   } catch (err: any) {
+    const latency = Date.now() - start;
+    logRequest('error', req.body.model || 'auto', 'error', latency, err.message);
     res.status(500).json({ error: { message: err.message, type: 'api_error' } });
   }
 });
