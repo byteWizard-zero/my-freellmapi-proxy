@@ -9,6 +9,8 @@ import { getDb, getUnifiedApiKey, validateClientApiKey, recordClientKeyUsage } f
 import { WebSearchService } from '../services/websearch.js';
 import { normalizeImage } from '../lib/image-normalizer.js';
 import { ImageSynthesisService } from '../services/image-synthesis-service.js';
+import { ResponseCache } from '../services/response-cache.js';
+import { SmartClassifier } from '../services/smart-classifier.js';
 
 export const proxyRouter = Router();
 
@@ -402,8 +404,27 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     }
   }
 
-  // Token estimation is intentionally a heuristic (~4 chars per token). Used
+  // ─── Response Cache (Fast Path) ──────────────────────────────────
+  const isCacheEnabled = !stream && req.headers['x-no-cache'] !== 'true';
+  if (isCacheEnabled) {
+    const cached = ResponseCache.get({
+      messages,
+      model: requestedModel,
+      temperature,
+      top_p,
+      tools,
+    });
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      if (cached._routed_via) {
+        res.setHeader('X-Routed-Via', `${cached._routed_via.platform}/${cached._routed_via.model} (cached)`);
+      }
+      res.json(cached);
+      return;
+    }
+  }
 
+  // Token estimation is intentionally a heuristic (~4 chars per token). Used
   // for routing decisions (skip a model whose budget is too small) and for
   // streaming bookkeeping where the provider doesn't echo a final usage count.
   // Non-streaming requests reconcile against the provider's real `usage` block
@@ -452,7 +473,41 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       }
     }
   } else {
-    preferredModel = getStickyModel(messages);
+    // LLM-powered smart workload classification for auto-routing
+    try {
+      const classification = await SmartClassifier.classify(messages);
+      res.setHeader('X-Workload-Category', classification.category);
+
+      const db = getDb();
+      if (classification.category === 'code') {
+        const row = db.prepare(`
+          SELECT id FROM models 
+          WHERE enabled = 1 AND (model_id LIKE '%coder%' OR model_id LIKE '%flash%')
+          ORDER BY speed_rank ASC LIMIT 1
+        `).get() as { id: number } | undefined;
+        if (row) preferredModel = row.id;
+      } else if (classification.category === 'reasoning_math') {
+        const row = db.prepare(`
+          SELECT id FROM models 
+          WHERE enabled = 1 AND (model_id LIKE '%pro%' OR model_id LIKE '%r1%' OR model_id LIKE '%reasoning%')
+          ORDER BY intelligence_rank ASC LIMIT 1
+        `).get() as { id: number } | undefined;
+        if (row) preferredModel = row.id;
+      } else if (classification.category === 'conversational_fast') {
+        const row = db.prepare(`
+          SELECT id FROM models 
+          WHERE enabled = 1 AND (platform = 'cerebras' OR platform = 'groq')
+          ORDER BY speed_rank ASC LIMIT 1
+        `).get() as { id: number } | undefined;
+        if (row) preferredModel = row.id;
+      }
+    } catch {
+      // Gracefully continue to sticky model on classifier error
+    }
+
+    if (!preferredModel) {
+      preferredModel = getStickyModel(messages);
+    }
   }
 
   // Retry loop: on 429/rate limit, skip that model+key and try the next one
@@ -624,6 +679,16 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         if (searchExecuted) res.setHeader('X-Web-Search', 'executed');
         if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
         res.json(result);
+
+        if (isCacheEnabled) {
+          ResponseCache.set({
+            messages,
+            model: requestedModel,
+            temperature,
+            top_p,
+            tools,
+          }, result);
+        }
 
         // Persist stored completions when store: true
         if (store) {

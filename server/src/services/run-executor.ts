@@ -1,4 +1,5 @@
 import { getDb, getUnifiedApiKey } from '../db/index.js';
+import { CodeInterpreter } from './code-interpreter.js';
 import crypto from 'crypto';
 
 export async function executeRun(runId: string): Promise<void> {
@@ -102,9 +103,59 @@ export async function executeRun(runId: string): Promise<void> {
     if (choice.finish_reason === 'tool_calls' || choice.message.tool_calls) {
       // Handle tool calls
       const toolCalls = choice.message.tool_calls;
-      
-      const stepId = `step_${crypto.randomUUID()}`;
       const stepNow = Math.floor(Date.now() / 1000);
+
+      // Check if any tool call is code_interpreter or python execution
+      let canAutoExecute = toolCalls.length > 0;
+      const autoResults: Array<{ tool_call_id: string; output: string }> = [];
+
+      for (const call of toolCalls) {
+        const fnName = call.function?.name;
+        if (fnName === 'code_interpreter' || fnName === 'python' || fnName === 'execute_code') {
+          let code = '';
+          try {
+            const parsed = JSON.parse(call.function.arguments || '{}');
+            code = parsed.code || parsed.input || '';
+          } catch {
+            code = call.function.arguments || '';
+          }
+          if (code) {
+            const result = await CodeInterpreter.execute(code);
+            autoResults.push({
+              tool_call_id: call.id,
+              output: result.stdout || result.stderr || (result.success ? 'Execution completed.' : 'Execution failed.'),
+            });
+          } else {
+            canAutoExecute = false;
+          }
+        } else {
+          canAutoExecute = false;
+        }
+      }
+
+      if (canAutoExecute && autoResults.length === toolCalls.length) {
+        // Record assistant tool call message
+        const assistantMsgId = `msg_${crypto.randomUUID()}`;
+        db.prepare(`
+          INSERT INTO thread_messages (id, thread_id, created_at, role, content, metadata, run_id)
+          VALUES (?, ?, ?, 'assistant', '[]', ?, ?)
+        `).run(assistantMsgId, run.thread_id, stepNow, JSON.stringify({ tool_calls: toolCalls }), runId);
+
+        // Record tool output messages
+        for (const out of autoResults) {
+          const resMsgId = `msg_${crypto.randomUUID()}`;
+          const content = JSON.stringify([{ type: 'text', text: { value: out.output, annotations: [] } }]);
+          db.prepare(`
+            INSERT INTO thread_messages (id, thread_id, created_at, role, content, run_id, metadata)
+            VALUES (?, ?, ?, 'tool', ?, ?, ?)
+          `).run(resMsgId, run.thread_id, stepNow + 1, content, runId, JSON.stringify({ tool_call_id: out.tool_call_id }));
+        }
+
+        // Seamlessly continue run execution loop to produce final answer
+        return executeRun(runId);
+      }
+
+      const stepId = `step_${crypto.randomUUID()}`;
       
       db.prepare(`
         INSERT INTO run_steps (
@@ -124,7 +175,7 @@ export async function executeRun(runId: string): Promise<void> {
         runId
       );
 
-      // We need to inject the assistant message with the tool_calls into the thread so it is remembered
+      // Inject assistant message with tool_calls into the thread so it is remembered
       const msgId = `msg_${crypto.randomUUID()}`;
       db.prepare(`
         INSERT INTO thread_messages (id, thread_id, created_at, role, content, metadata, run_id)
