@@ -17,6 +17,16 @@ import { analyticsRouter } from './routes/analytics.js';
 import { healthRouter } from './routes/health.js';
 import { settingsRouter } from './routes/settings.js';
 import { logsRouter } from './routes/logs.js';
+import { filesRouter } from './routes/files.js';
+import { uploadsRouter } from './routes/uploads.js';
+import { batchesRouter } from './routes/batches.js';
+import { assistantsRouter } from './routes/assistants.js';
+import { threadsRouter } from './routes/threads.js';
+import { vectorStoresRouter } from './routes/vector-stores.js';
+import { responsesRouter } from './routes/responses.js';
+import { fineTuningRouter } from './routes/fine-tuning.js';
+import { realtimeRouter } from './routes/realtime.js';
+import { adminRouter } from './routes/admin.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +61,16 @@ export function createApp() {
   app.use('/v1/moderations', moderationsRouter);
   app.use('/v1/images', imagesRouter);
   app.use('/v1/audio', audioRouter);
+  app.use('/v1/files', filesRouter);
+  app.use('/v1/uploads', uploadsRouter);
+  app.use('/v1/batches', batchesRouter);
+  app.use('/v1/assistants', assistantsRouter);
+  app.use('/v1/threads', threadsRouter);
+  app.use('/v1/vector_stores', vectorStoresRouter);
+  app.use('/v1/responses', responsesRouter);
+  app.use('/v1/fine_tuning', fineTuningRouter);
+  app.use('/v1/realtime', realtimeRouter);
+  app.use('/v1/organization', adminRouter);
   app.use('/v1', proxyRouter);
 
   // Health check
