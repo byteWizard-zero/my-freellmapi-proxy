@@ -288,6 +288,7 @@ describe('OpenAICompatProvider - platform instances', () => {
     { platform: 'openrouter', name: 'OpenRouter',    baseUrl: 'https://openrouter.ai/api/v1' },
     { platform: 'github',     name: 'GitHub Models', baseUrl: 'https://models.github.ai/inference' },
     { platform: 'zhipu',      name: 'Zhipu AI',      baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+    { platform: 'experiential', name: 'Experiential Labs', baseUrl: 'https://api.experientiallabs.ai/v1' },
   ] as const;
 
   for (const p of platforms) {
@@ -312,4 +313,58 @@ describe('OpenAICompatProvider - platform instances', () => {
       expect(result._routed_via?.platform).toBe(p.platform);
     });
   }
+});
+
+describe('OpenAICompatProvider - Experiential Labs sampling omission', () => {
+  it('omits temperature and top_p for claude-fable-5.1 and gpt-6-astra while retaining them for standard models', async () => {
+    const provider = new OpenAICompatProvider({
+      platform: 'experiential',
+      name: 'Experiential Labs',
+      baseUrl: 'https://api.experientiallabs.ai/v1',
+    });
+
+    let capturedBody: any = null;
+    vi.spyOn(global, 'fetch').mockImplementation(async (_url, init) => {
+      capturedBody = JSON.parse((init as any).body);
+      return {
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'id', object: 'chat.completion', created: 1, model: 'claude-fable-5.1',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'reasoning answer' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      } as any;
+    });
+
+    await provider.chatCompletion(
+      'key',
+      [{ role: 'user', content: 'hello' }],
+      'claude-fable-5.1',
+      { temperature: 0.7, top_p: 0.9, max_tokens: 100 },
+    );
+
+    expect(capturedBody.temperature).toBeUndefined();
+    expect(capturedBody.top_p).toBeUndefined();
+    expect(capturedBody.max_tokens).toBe(100);
+
+    // Also test gpt-6-astra
+    await provider.chatCompletion(
+      'key',
+      [{ role: 'user', content: 'hello' }],
+      'gpt-6-astra',
+      { temperature: 0.5, top_p: 0.8 },
+    );
+    expect(capturedBody.temperature).toBeUndefined();
+    expect(capturedBody.top_p).toBeUndefined();
+
+    // Standard model keeps temperature and top_p
+    await provider.chatCompletion(
+      'key',
+      [{ role: 'user', content: 'hello' }],
+      'qwen3.8-27b',
+      { temperature: 0.7, top_p: 0.9 },
+    );
+    expect(capturedBody.temperature).toBe(0.7);
+    expect(capturedBody.top_p).toBe(0.9);
+  });
 });

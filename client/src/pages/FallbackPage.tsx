@@ -72,6 +72,7 @@ const platformColors: Record<string, string> = {
   pollinations:'#ec4899',
   llm7:        '#a855f7',
   moonshot:    '#3b82f6',
+  experiential:'#14b8a6',
 }
 
 function TokenUsageBar({ data }: { data: TokenUsageData }) {

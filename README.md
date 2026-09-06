@@ -2,9 +2,9 @@
 
 # FreeLLMAPI
 
-**One OpenAI-compatible endpoint. Eleven free LLM providers. Multimodal Vision, Image Gen, and Audio Speech/STT. ~1B+ tokens per month.**
+**One OpenAI-compatible endpoint. Twelve free LLM providers. Multimodal Vision, Image Gen, and Audio Speech/STT. ~1B+ tokens per month.**
 
-Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Pollinations, and Z.ai (Zhipu) behind a unified OpenAI-compatible endpoint (`/v1/chat/completions`, `/v1/images/*`, `/v1/audio/*`). Keys are stored encrypted. An intelligent router picks the best available model for each request, handles multimodal inputs, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
+Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare, Pollinations, Z.ai (Zhipu), and Experiential Labs behind a unified OpenAI-compatible endpoint (`/v1/chat/completions`, `/v1/images/*`, `/v1/audio/*`). Keys are stored encrypted. An intelligent router picks the best available model for each request, handles multimodal inputs, falls over to the next provider when one is rate-limited, and tracks per-key usage so you stay under every free-tier cap.
 
 [![CI](https://github.com/byteWizard-zero/my-freellmapi-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/byteWizard-zero/my-freellmapi-proxy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
@@ -57,6 +57,9 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 <td align="center"><a href="https://docs.z.ai"><b>Z.ai (Zhipu)</b><br/>GLM-4 Flash · GLM-4V · GLM-4.5 · GLM-4.7</a></td>
 <td align="center"><a href="https://cohere.com"><b>Cohere</b><br/>Command R+ · Command-A (trial)</a></td>
 <td align="center"><a href="https://moonshot.cn"><b>Moonshot AI (Kimi)</b><br/>Kimi 8k/32k/128k · K2.5/2.6/2.7</a></td>
+</tr>
+<tr>
+<td align="center" colspan="4"><a href="https://platform.experientiallabs.ai"><b>Experiential Labs</b><br/>Claude Fable 5.1 · GPT-6 Astra · GPT-5.6 Luna · DeepSeek V4 Flash · Qwen3.8 27B</a></td>
 </tr>
 <tr>
 <td align="center" colspan="4"><i>Adding another? See <a href="#contributing">Contributing</a>.</i></td>

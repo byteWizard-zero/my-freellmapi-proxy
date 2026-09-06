@@ -20,7 +20,8 @@ export type Platform =
   | 'kilo'
   | 'pollinations'
   | 'llm7'
-  | 'moonshot';
+  | 'moonshot'
+  | 'experiential';
 
 export type ModelModality = 'chat' | 'vision' | 'image' | 'audio_stt' | 'audio_tts' | 'embedding' | 'moderation';
 

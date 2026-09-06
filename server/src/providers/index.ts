@@ -147,6 +147,16 @@ register(new OpenAICompatProvider({
 // $0.0, please pay with fiat or send tao". The "free" tier requires a
 // non-zero balance, which conflicts with the project's no-card criterion.
 
+// Experiential Labs — OpenAI-compatible gateway with promotional free frontier models
+// (Claude Fable 5.1, GPT-6 Astra, GPT-5.6 Luna, DeepSeek V4 Flash, Qwen3.8 27B).
+// Extended timeout (60s) for frontier reasoning models.
+register(new OpenAICompatProvider({
+  platform: 'experiential',
+  name: 'Experiential Labs',
+  baseUrl: 'https://api.experientiallabs.ai/v1',
+  timeoutMs: 60000,
+}));
+
 export function getProvider(platform: Platform): BaseProvider | undefined {
   return providers.get(platform);
 }

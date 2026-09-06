@@ -26,6 +26,7 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
   { value: 'llm7', label: 'LLM7 (anon ok)' },
   { value: 'moonshot', label: 'Moonshot AI (Kimi)' },
+  { value: 'experiential', label: 'Experiential Labs' },
 ]
 
 export const PLATFORM_CAPABILITIES: Record<Platform, string[]> = {
@@ -45,6 +46,7 @@ export const PLATFORM_CAPABILITIES: Record<Platform, string[]> = {
   kilo: ['Chat'],
   llm7: ['Chat'],
   moonshot: ['Chat'],
+  experiential: ['Chat', 'Vision'],
 }
 
 const statusDot: Record<string, string> = {

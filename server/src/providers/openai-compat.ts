@@ -38,12 +38,21 @@ export class OpenAICompatProvider extends BaseProvider {
     this.timeoutMs = opts.timeoutMs ?? 15000;
   }
 
+  private isSamplingPinned(modelId: string): boolean {
+    if (this.platform === 'experiential') {
+      const lower = modelId.toLowerCase();
+      return lower.includes('fable') || lower.includes('astra') || lower.includes('gpt-6');
+    }
+    return false;
+  }
+
   async chatCompletion(
     apiKey: string,
     messages: ChatMessage[],
     modelId: string,
     options?: CompletionOptions,
   ): Promise<ChatCompletionResponse> {
+    const samplingPinned = this.isSamplingPinned(modelId);
     const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -54,9 +63,9 @@ export class OpenAICompatProvider extends BaseProvider {
       body: JSON.stringify({
         model: modelId,
         messages,
-        temperature: options?.temperature,
+        temperature: samplingPinned ? undefined : options?.temperature,
         max_tokens: options?.max_tokens,
-        top_p: options?.top_p,
+        top_p: samplingPinned ? undefined : options?.top_p,
         tools: options?.tools,
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,
@@ -88,6 +97,7 @@ export class OpenAICompatProvider extends BaseProvider {
     modelId: string,
     options?: CompletionOptions,
   ): AsyncGenerator<ChatCompletionChunk> {
+    const samplingPinned = this.isSamplingPinned(modelId);
     const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -98,9 +108,9 @@ export class OpenAICompatProvider extends BaseProvider {
       body: JSON.stringify({
         model: modelId,
         messages,
-        temperature: options?.temperature,
+        temperature: samplingPinned ? undefined : options?.temperature,
         max_tokens: options?.max_tokens,
-        top_p: options?.top_p,
+        top_p: samplingPinned ? undefined : options?.top_p,
         tools: options?.tools,
         tool_choice: options?.tool_choice,
         parallel_tool_calls: options?.parallel_tool_calls,

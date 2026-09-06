@@ -53,6 +53,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV15(db);
   migrateModelsV16(db);
   migrateModelsV17(db);
+  migrateModelsV18(db);
   migrateOpenAIParity(db);
   seedApiKeysFromEnv(db);
   ensureUnifiedKey(db);
@@ -81,6 +82,8 @@ function seedApiKeysFromEnv(db: Database.Database) {
     POLLINATIONS_API_KEY: 'pollinations',
     LLM7_API_KEY: 'llm7',
     MOONSHOT_API_KEY: 'moonshot',
+    EXPERIENTIAL_API_KEY: 'experiential',
+    EXPLABS_API_KEY: 'experiential',
   };
 
   const insertStmt = db.prepare(`
@@ -1334,6 +1337,56 @@ function migrateModelsV17(db: Database.Database) {
   }
 
   console.log('[Migration V17] Client API Keys, Embedding models, and Moderation models initialized successfully.');
+}
+
+/**
+ * V18: Experiential Labs Provider Integration.
+ * Seeds catalog models for Experiential Labs promotional free tiers:
+ * - Claude Fable 5.1 (Frontier reasoning, 375k in/day, 1M context, vision)
+ * - GPT-6 Astra (Frontier reasoning, 375k in/day, 1.05M context, vision)
+ * - GPT-5.6 Luna (Large fast frontier, $5/day, 1.05M context, vision)
+ * - DeepSeek V4 Flash (Large, $25/day, 1.05M context, chat)
+ * - Qwen3.8 27B (Medium, $5/day, 1M context, chat)
+ */
+function migrateModelsV18(db: Database.Database) {
+  const insertModel = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, enabled, modality)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updateModality = db.prepare("UPDATE models SET modality = ? WHERE platform = ? AND model_id = ?");
+
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, string]> = [
+    // platform, model_id, display_name, intel_rank, speed_rank, size_label, rpm, rpd, tpm, tpd, budget, context, enabled, modality
+    ['experiential', 'claude-fable-5.1',   'Claude Fable 5.1 (Experiential)', 1, 8, 'Frontier', null, null, null, 375000, '~11.2M (375k/d)', 1000000, 1, 'vision'],
+    ['experiential', 'gpt-6-astra',        'GPT-6 Astra (Experiential)',      1, 8, 'Frontier', null, null, null, 375000, '~11.2M (375k/d)', 1050000, 1, 'vision'],
+    ['experiential', 'gpt-5.6-luna',       'GPT-5.6 Luna (Experiential)',     3, 4, 'Large',    null, null, null, null,   '~50M ($5/d)',     1050000, 1, 'vision'],
+    ['experiential', 'deepseek-v4-flash',  'DeepSeek V4 Flash (Experiential)',5, 5, 'Large',    null, null, null, null,   '~150M ($25/d)',   1050000, 1, 'chat'],
+    ['experiential', 'qwen3.8-27b',        'Qwen3.8 27B (Experiential)',      7, 9, 'Medium',   null, null, null, null,   '~15M ($5/d)',     1000000, 1, 'chat'],
+  ];
+
+  const apply = db.transaction(() => {
+    for (const m of additions) {
+      insertModel.run(...m);
+      updateModality.run(m[13], m[0], m[1]);
+    }
+
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC, m.id ASC
+    `).all() as { id: number }[];
+
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) {
+        addFb.run(missing[i].id, maxPriority + i + 1);
+      }
+    }
+  });
+
+  apply();
+  console.log('[Migration V18] Experiential Labs models initialized successfully.');
 }
 
 function ensureUnifiedKey(db: Database.Database) {
