@@ -16,7 +16,6 @@ import { fallbackRouter } from './routes/fallback.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { healthRouter } from './routes/health.js';
 import { settingsRouter } from './routes/settings.js';
-import { logsRouter } from './routes/logs.js';
 import { filesRouter } from './routes/files.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { batchesRouter } from './routes/batches.js';
@@ -58,7 +57,6 @@ export function createApp() {
   app.use('/api/analytics', requireAuth, analyticsRouter);
   app.use('/api/health', requireAuth, healthRouter);
   app.use('/api/settings', requireAuth, settingsRouter);
-  app.use('/api/logs', requireAuth, logsRouter);
 
   // OpenAI-compatible proxy & multimodal media routes
   app.use('/v1/embeddings', embeddingsRouter);
