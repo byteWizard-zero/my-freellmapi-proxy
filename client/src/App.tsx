@@ -9,6 +9,7 @@ import AnalyticsPage from '@/pages/AnalyticsPage'
 import CooldownsPage from '@/pages/CooldownsPage'
 import LogsPage from '@/pages/LogsPage'
 import ClientKeysPage from '@/pages/ClientKeysPage'
+import AuthGate from '@/components/AuthGate'
 
 const queryClient = new QueryClient()
 
@@ -73,6 +74,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AuthGate>
         <div className="min-h-screen bg-background">
           <header className="sticky top-0 z-40 bg-background/60 backdrop-blur-md border-b border-border/80">
             <div className="max-w-6xl mx-auto px-6 flex items-center">
@@ -106,6 +108,7 @@ function App() {
             </Routes>
           </main>
         </div>
+        </AuthGate>
       </BrowserRouter>
     </QueryClientProvider>
   )
