@@ -28,6 +28,8 @@ import { fineTuningRouter } from './routes/fine-tuning.js';
 import { realtimeRouter } from './routes/realtime.js';
 import { adminRouter } from './routes/admin.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { authRouter } from './routes/auth.js';
+import { requireAuth } from './middleware/requireAuth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,15 +47,18 @@ export function createApp() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // API routes
-  app.use('/api/keys', keysRouter);
-  app.use('/api/client-keys', clientKeysRouter);
-  app.use('/api/models', modelsRouter);
-  app.use('/api/fallback', fallbackRouter);
-  app.use('/api/analytics', analyticsRouter);
-  app.use('/api/health', healthRouter);
-  app.use('/api/settings', settingsRouter);
-  app.use('/api/logs', logsRouter);
+  // Auth routes (public — login, setup, status)
+  app.use('/api/auth', authRouter);
+
+  // Dashboard API routes — all require authentication
+  app.use('/api/keys', requireAuth, keysRouter);
+  app.use('/api/client-keys', requireAuth, clientKeysRouter);
+  app.use('/api/models', requireAuth, modelsRouter);
+  app.use('/api/fallback', requireAuth, fallbackRouter);
+  app.use('/api/analytics', requireAuth, analyticsRouter);
+  app.use('/api/health', requireAuth, healthRouter);
+  app.use('/api/settings', requireAuth, settingsRouter);
+  app.use('/api/logs', requireAuth, logsRouter);
 
   // OpenAI-compatible proxy & multimodal media routes
   app.use('/v1/embeddings', embeddingsRouter);
