@@ -8,6 +8,16 @@ import {
 import { validateSetupCode, clearSetupCode } from '../lib/setup-code.js';
 import { generateResetCode, validateResetCode, clearResetCode } from '../lib/reset-code.js';
 import { hashPassword } from '../lib/password.js';
+import {
+  generatePasskeyRegisterOptions,
+  verifyPasskeyRegistration,
+  generatePasskeyLoginOptions,
+  verifyPasskeyLogin,
+  listPasskeys,
+  deletePasskey,
+  hasAnyPasskeys,
+} from '../services/passkey.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 
 export const authRouter = Router();
 
@@ -164,4 +174,60 @@ authRouter.post('/reset-password', (req, res) => {
   // Create new session token and return
   const token = createSession(user.id);
   res.json({ token, user: { id: user.id, email: user.email } });
+});
+
+// WebAuthn Passkeys endpoints
+authRouter.get('/webauthn/has-passkeys', (_req, res) => {
+  res.json({ hasPasskeys: hasAnyPasskeys() });
+});
+
+authRouter.post('/webauthn/login-options', async (req, res) => {
+  try {
+    const options = await generatePasskeyLoginOptions(req);
+    res.json(options);
+  } catch (err: any) {
+    res.status(500).json({ error: { message: err.message, type: 'webauthn_error' } });
+  }
+});
+
+authRouter.post('/webauthn/login-verify', async (req, res) => {
+  try {
+    const user = await verifyPasskeyLogin(req.body, req);
+    const token = createSession(user.id);
+    res.json({ token, user });
+  } catch (err: any) {
+    res.status(400).json({ error: { message: err.message, type: 'webauthn_error' } });
+  }
+});
+
+authRouter.post('/webauthn/register-options', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const options = await generatePasskeyRegisterOptions({ id: user.userId, email: user.email }, req);
+    res.json(options);
+  } catch (err: any) {
+    res.status(500).json({ error: { message: err.message, type: 'webauthn_error' } });
+  }
+});
+
+authRouter.post('/webauthn/register-verify', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const result = await verifyPasskeyRegistration({ id: user.userId, email: user.email }, req.body, req);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: { message: err.message, type: 'webauthn_error' } });
+  }
+});
+
+authRouter.get('/webauthn/passkeys', requireAuth, (req, res) => {
+  const user = (req as any).user;
+  const passkeys = listPasskeys(user.userId);
+  res.json({ passkeys });
+});
+
+authRouter.delete('/webauthn/passkeys/:id', requireAuth, (req, res) => {
+  const user = (req as any).user;
+  deletePasskey(user.userId, req.params.id as string);
+  res.json({ success: true });
 });
