@@ -23,6 +23,7 @@ Aggregate the free tiers from Google, Groq, Cerebras, SambaNova, NVIDIA, Mistral
 - [Features](#features)
 - [Not yet supported](#not-yet-supported)
 - [Quick start](#quick-start)
+- [Admin-only access & dashboard security](#admin-only-access--dashboard-security)
 - [Using the API](#using-the-api)
 - [Screenshots](#screenshots)
 - [How it works](#how-it-works)
@@ -83,6 +84,11 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Global Key Cooldowns** — If an API key encounters an error or hits rate limits on any model, it goes on a global cooldown for **1 hour** across all models using that key to avoid redundant fallback loops.
 - **Per-key rate tracking** — RPM, RPD, TPM, and TPD counters per `(platform, model, key)` so the router always picks a key that's under its caps.
 - **Sticky sessions** — Multi-turn conversations keep talking to the same model for 30 minutes to avoid the hallucination spike that comes from mid-conversation model switches.
+- **Admin-Only Dashboard Access & API Protection** — Secure `AuthGate` requiring scrypt-hashed credentials to access the UI and `/api/*` management endpoints, with brute-force rate limiting.
+- **Hardware Passkeys & WebAuthn Biometrics** — 1-click biometric sign-in via Touch ID, Windows Hello, Face ID, or FIDO2 security keys (YubiKey).
+- **One-Time Remote Setup Code** — Generates an ephemeral 6-character code in server console logs on first boot to prevent unauthorized setup on public/cloud deployments (Render, Railway, Docker).
+- **Console-Based Password Recovery** — Ephemeral 6-character reset codes logged directly to server console output for zero-dependency admin password recovery without SMTP or email services.
+- **Auto-Locking & Session Isolation** — Sessions use browser `sessionStorage` and a one-click header lock button to ensure unattended devices are instantly protected.
 - **Encrypted key storage** — API keys are encrypted with AES-256-GCM before hitting SQLite; decryption happens in-memory just before a request.
 - **Unified API key & Multi-tenant Keys** — Clients authenticate with the master key or dedicated client API keys with token limits.
 - **Health checks** — Periodic probes mark keys as `healthy`, `rate_limited`, `invalid`, or `error` so the router skips dead ones automatically.
@@ -119,7 +125,7 @@ echo "ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).to
 npm run dev
 ```
 
-Open **http://localhost:5173** (the Vite dev UI), add your provider keys on the **Keys** page, reorder the **Fallback Chain** to taste, and grab your unified API key from the **Keys** page. That unified key (`freellmapi-...`) is what you point your OpenAI SDK at.
+Open **http://localhost:5173** (the Vite dev UI). On first visit, set up your admin account (see [Admin-Only Access](#admin-only-access--dashboard-security)), add your provider keys on the **Provider Keys** page, reorder the **Fallback Chain** to taste, and grab your unified API key. That unified key (`freellmapi-...`) is what you point your OpenAI SDK at.
 
 For a production build:
 
@@ -147,6 +153,142 @@ If you have sibling coding projects on your machine that consume this proxy, you
    npm run sync-keys
    ```
    This tool scans all adjacent workspace folders recursively (up to depth 4), updates matching placeholders with your active unified API key, and prints diagnostics.
+
+## Admin-Only Access & Dashboard Security
+
+FreeLLMAPI includes a built-in security perimeter that protects your upstream provider API keys, model routing configuration, client tenant keys, and usage analytics behind an **AuthGate**.
+
+All management API routes (`/api/*`) require an authenticated admin session token. Downstream LLM consumer traffic (`/v1/*`) continues to authenticate separately via your master Unified API Key (`freellmapi-...`) or Client Project Keys (`freellm-client-...`).
+
+---
+
+### Step 1: Initial Setup (Claiming Admin Ownership)
+
+When you run FreeLLMAPI for the first time, no admin account exists yet. Opening the web interface displays the **Create Admin Account** screen.
+
+#### Option A: Local Setup (`http://localhost:5173` or `http://localhost:3001`)
+1. Open the dashboard in your browser.
+2. Enter your desired admin **Email** and a **Password** (minimum 8 characters).
+3. Confirm your password.
+4. On local loopback connections (`127.0.0.1` / `::1`), the **Setup Code** is not required. Click **Create Account**.
+
+#### Option B: Remote or Cloud Deployment (Render, Railway, Docker, VPS)
+To prevent unauthorized parties from claiming ownership when the proxy boots on a public IP or cloud platform:
+1. Open your deployed dashboard URL (e.g. `https://your-proxy.onrender.com`).
+2. Inspect your server console logs (e.g. Render Dashboard **Logs** tab or `docker logs <container_id>`). On startup, the server generates and displays an ephemeral 6-character code:
+   ```text
+   ========================================
+     Dashboard setup code: 9A4F2E
+     (Required for first-time remote setup)
+   ========================================
+   ```
+3. Enter your **Email**, **Password**, and this **6-character Setup Code** in the registration form.
+4. Click **Create Account**.
+5. Once your account is created, the setup code is permanently purged from memory.
+
+---
+
+### Step 2: Logging In to the Dashboard
+
+Once initialized, all subsequent visits require administrative authentication:
+
+1. Navigate to the dashboard URL.
+2. Enter your registered admin **Email** and **Password**.
+3. Click **Sign in**.
+
+#### Security Safeguards:
+- **Per-Visit Session Isolation**: Session tokens are stored in the browser's `sessionStorage`. If you close the browser tab or open a new window, you will be prompted to log in again. This prevents unauthorized access on shared or unattended computers.
+- **Server-Side Expiry**: Active sessions are validated against SQLite session token hashes (SHA-256) and expire after 30 days.
+- **Brute-Force Rate Limiting**: The server tracks failed login attempts per client IP. After **5 failed attempts**, further login requests from that IP are blocked for **15 minutes** (`HTTP 429 Too Many Requests`).
+
+---
+
+### Step 3: Setting Up 1-Click Biometric / Hardware Passkey Login (WebAuthn)
+
+FreeLLMAPI supports FIDO2 / WebAuthn passwordless authentication. You can sign in using **Touch ID**, **Windows Hello**, **Face ID**, or physical security keys (e.g. **YubiKey**) without retyping your password.
+
+#### Registering a Device Passkey:
+1. Log in to the dashboard using your email and password.
+2. If no passkey has been added yet, an alert banner appears at the top:
+   > 🔑 *You haven't set up a Passkey yet. Set one up to sign in with your fingerprint or device PIN next time!*
+   *(You can also click the **Fingerprint icon** `👆` in the top-right header at any time).*
+3. Click **Set up Passkey**.
+4. Confirm the prompt presented by your browser or operating system (e.g. tap fingerprint scanner, scan face, or touch YubiKey).
+5. You can register passkeys across multiple devices (e.g. desktop, laptop, and phone).
+
+#### Signing In with a Passkey:
+- On future visits to the login screen, a highlighted button appears:
+  **"👆 Sign in with Fingerprint / Passkey"**.
+- Click the button and authenticate with your biometric sensor or device PIN for instant 1-click access.
+
+---
+
+### Step 4: Quick-Locking the Dashboard & Logging Out
+
+When leaving your workstation:
+1. Click the **Lock icon** (`🔒`) in the top-right navigation bar.
+2. The browser immediately wipes the session token from `sessionStorage` and triggers a logout event.
+3. The UI immediately resets to the sign-in screen, blocking further access to all dashboard management views and `/api/*` endpoints.
+
+---
+
+### Step 5: Password Recovery via Server Logs (Forgot Password)
+
+If you forget your admin password, FreeLLMAPI includes a secure, zero-dependency recovery mechanism that works without needing external SMTP or email services:
+
+1. On the login screen, click **"Forgot password?"** below the password field.
+2. Enter your registered admin **Email** and click **Send Reset Code**.
+3. Check your server console output (e.g. terminal logs, Docker logs, or Render Dashboard Logs). FreeLLMAPI prints a time-limited 6-character reset code:
+   ```text
+   ========================================
+     Password reset code: E7B841
+     Account: admin@example.com
+     (Valid for 15 minutes)
+   ========================================
+   ```
+4. Enter the **Reset Code**, your **New Password** (minimum 8 characters), and confirm the password.
+5. Click **Reset & Log In**.
+6. FreeLLMAPI updates your password using scrypt hashing, invalidates all prior active sessions across all devices, and logs you into the dashboard with a new session.
+
+---
+
+### Step 6: Programmatic Access to Admin Endpoints
+
+All administrative backend routes (`/api/keys`, `/api/client-keys`, `/api/models`, `/api/fallback`, `/api/analytics`, `/api/health`, `/api/settings`) enforce authentication via the `requireAuth` middleware.
+
+To interact with these management routes programmatically (e.g. from CI/CD, scripts, or external tools):
+
+1. **Obtain a Session Token**:
+   ```bash
+   curl -X POST http://localhost:3001/api/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{
+       "email": "admin@example.com",
+       "password": "your-password"
+     }'
+   ```
+   *Response:*
+   ```json
+   {
+     "token": "7f8b9c0d1e2f...",
+     "user": {
+       "id": 1,
+       "email": "admin@example.com"
+     }
+   }
+   ```
+
+2. **Call Protected Admin Routes**:
+   Send the session token in the `Authorization` header as a Bearer token (or via `x-dashboard-token`):
+   ```bash
+   # List configured provider keys
+   curl http://localhost:3001/api/keys \
+     -H "Authorization: Bearer 7f8b9c0d1e2f..."
+
+   # Manage client tenant keys
+   curl http://localhost:3001/api/client-keys \
+     -H "Authorization: Bearer 7f8b9c0d1e2f..."
+   ```
 
 ## Using the API
 
@@ -424,7 +566,7 @@ Stacking free tiers has real trade-offs. Be honest with yourself about them:
 - **Latency is highly variable.** Cerebras and Groq are extremely fast; others are not. You get whichever one is available.
 - **Free tiers can change without notice.** Providers regularly tighten, loosen, or remove free tiers. When that happens you'll see 429s or auth errors until you update the catalog. Re-seed scripts live in `server/src/scripts/`.
 - **No SLA, by definition.** If you need reliability, use a paid provider with a contract.
-- **Local-first.** There's no multi-tenant auth. Run this for yourself; don't expose it to the internet.
+- **Single-admin architecture.** While FreeLLMAPI secures the dashboard with admin authentication and supports multi-tenant client API keys with token quotas for downstream applications, the management dashboard is designed for a single administrator.
 
 ## Contributing
 
