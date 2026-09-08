@@ -313,7 +313,7 @@ export default function FallbackPage() {
         title="Fallback chain"
         description="Drag to reorder. Requests try models top-to-bottom until one succeeds."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"

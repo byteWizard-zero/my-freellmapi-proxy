@@ -667,12 +667,12 @@ export default function PlaygroundPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)] sm:h-[calc(100vh-8rem)]">
       <PageHeader
         title="Playground"
         description="Test LLM text chat, multimodal vision, AI image generation, vector embeddings, moderation, and audio."
         actions={
-          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto flex-nowrap">
             <button
               onClick={() => setActiveTab('chat')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -682,7 +682,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <MessageSquare className="size-3.5" />
-              <span>Chat & Vision</span>
+              <span className="hidden sm:inline">Chat & Vision</span>
             </button>
             <button
               onClick={() => setActiveTab('images')}
@@ -693,7 +693,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <ImageIcon className="size-3.5 text-pink-500" />
-              <span>Image Studio</span>
+              <span className="hidden sm:inline">Image Studio</span>
             </button>
             <button
               onClick={() => setActiveTab('audio')}
@@ -704,7 +704,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <Volume2 className="size-3.5 text-blue-500" />
-              <span>Audio Lab</span>
+              <span className="hidden sm:inline">Audio Lab</span>
             </button>
             <button
               onClick={() => setActiveTab('embeddings')}
@@ -715,7 +715,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <Binary className="size-3.5 text-emerald-500" />
-              <span>Embeddings</span>
+              <span className="hidden sm:inline">Embeddings</span>
             </button>
             <button
               onClick={() => setActiveTab('moderations')}
@@ -726,7 +726,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <ShieldAlert className="size-3.5 text-amber-500" />
-              <span>Moderation</span>
+              <span className="hidden sm:inline">Moderation</span>
             </button>
           </div>
         }
@@ -739,7 +739,7 @@ export default function PlaygroundPage() {
           <div className="flex items-center justify-between gap-3 p-3 border-b bg-muted/20 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
               <Select value={selectedModel} onValueChange={(v) => setSelectedModel(v ?? 'auto')}>
-                <SelectTrigger className="w-[240px] h-9">
+                <SelectTrigger className="w-full sm:w-[240px] h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -807,7 +807,7 @@ export default function PlaygroundPage() {
           </div>
 
           {/* Chat Messages Log */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-center">
                 <div className="space-y-3 max-w-md">
@@ -825,7 +825,7 @@ export default function PlaygroundPage() {
                 {messages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed space-y-2 ${
+                      className={`max-w-[90%] sm:max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed space-y-2 ${
                         msg.role === 'user'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted'
@@ -1048,13 +1048,13 @@ export default function PlaygroundPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4 pt-2 border-t flex-wrap">
-              <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                 {/* Model Selector */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Model:</span>
                   <Select value={imageModel} onValueChange={(v) => setImageModel(v ?? 'auto')}>
-                    <SelectTrigger className="w-[200px] h-8 text-xs">
+                    <SelectTrigger className="w-full sm:w-[200px] h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1071,7 +1071,7 @@ export default function PlaygroundPage() {
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Size:</span>
                   <Select value={imageSize} onValueChange={(v) => setImageSize(v ?? '1024x1024')}>
-                    <SelectTrigger className="w-[160px] h-8 text-xs">
+                    <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1243,12 +1243,12 @@ export default function PlaygroundPage() {
                 className="w-full resize-none rounded-md border bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
 
-              <div className="flex items-center justify-between gap-4 pt-2 border-t flex-wrap">
-                <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Voice:</span>
                     <Select value={ttsVoice} onValueChange={(v) => setTtsVoice(v ?? 'alloy')}>
-                      <SelectTrigger className="w-[150px] h-8 text-xs">
+                      <SelectTrigger className="w-full sm:w-[150px] h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1265,7 +1265,7 @@ export default function PlaygroundPage() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Format:</span>
                     <Select value={ttsFormat} onValueChange={(v) => setTtsFormat(v ?? 'mp3')}>
-                      <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <SelectTrigger className="w-full sm:w-[110px] h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1297,12 +1297,12 @@ export default function PlaygroundPage() {
 
               {/* Audio Player Output */}
               {ttsAudioUrl && (
-                <div className="p-4 rounded-lg border bg-muted/30 flex items-center justify-between gap-4 mt-4">
+                <div className="p-4 rounded-lg border bg-muted/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
                   <div className="flex items-center gap-3 flex-1">
                     <div className="size-10 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
                       <Volume2 className="size-5" />
                     </div>
-                    <audio controls src={ttsAudioUrl} className="w-full max-w-md h-10" />
+                    <audio controls src={ttsAudioUrl} className="w-full max-w-full sm:max-w-md h-10" />
                   </div>
                   <a
                     href={ttsAudioUrl}
@@ -1402,12 +1402,12 @@ export default function PlaygroundPage() {
               </div>
 
               {/* STT Controls */}
-              <div className="flex items-center justify-between gap-4 pt-2 border-t flex-wrap">
-                <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Model:</span>
                     <Select value={sttModel} onValueChange={(v) => setSttModel(v ?? 'whisper-large-v3')}>
-                      <SelectTrigger className="w-[180px] h-8 text-xs">
+                      <SelectTrigger className="w-full sm:w-[180px] h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1422,7 +1422,7 @@ export default function PlaygroundPage() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Task:</span>
                     <Select value={sttTask} onValueChange={(v) => setSttTask((v as any) ?? 'transcribe')}>
-                      <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectTrigger className="w-full sm:w-[140px] h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1488,7 +1488,7 @@ export default function PlaygroundPage() {
       {/* ======================= TAB 4: EMBEDDINGS LAB ======================= */}
       {activeTab === 'embeddings' && (
         <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto">
-          <div className="flex items-center justify-between border-b pb-4 flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-3">
             <div>
               <h2 className="text-sm font-semibold flex items-center gap-2">
                 <Binary className="size-4 text-emerald-500" />
@@ -1501,7 +1501,7 @@ export default function PlaygroundPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Model:</span>
               <Select value={embedModel} onValueChange={(v) => setEmbedModel(v ?? 'auto')}>
-                <SelectTrigger className="w-[240px] h-8 text-xs font-mono">
+                <SelectTrigger className="w-full sm:w-[240px] h-8 text-xs font-mono">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

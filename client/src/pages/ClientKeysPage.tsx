@@ -196,7 +196,7 @@ export default function ClientKeysPage() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <code className="flex-1 font-mono text-xs bg-background/80 px-3 py-2 rounded border select-all truncate text-foreground font-semibold">
                 {createdKeyData.key}
               </code>

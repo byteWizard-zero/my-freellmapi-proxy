@@ -165,7 +165,7 @@ export default function AnalyticsPage() {
               {byModel.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No data yet</p>
               ) : (
-                <div className="max-h-[360px] overflow-y-auto -mx-4">
+                <div className="max-h-[360px] overflow-y-auto overflow-x-auto -mx-4">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -217,7 +217,7 @@ export default function AnalyticsPage() {
             {errors.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No errors</p>
             ) : (
-              <div className="max-h-[240px] overflow-y-auto -mx-4">
+              <div className="max-h-[240px] overflow-y-auto overflow-x-auto -mx-4">
                 <Table>
                   <TableHeader>
                     <TableRow>

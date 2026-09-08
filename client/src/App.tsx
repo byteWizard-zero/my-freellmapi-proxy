@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import KeysPage from '@/pages/KeysPage'
@@ -12,10 +12,11 @@ import AuthGate from '@/components/AuthGate'
 
 const queryClient = new QueryClient()
 
-function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
+function NavItem({ to, children, onClick }: { to: string; children: React.ReactNode; onClick?: () => void }) {
   return (
     <NavLink
       to={to}
+      onClick={onClick}
       className={({ isActive }) =>
         `relative text-sm px-1 py-4 transition-colors ${
           isActive
@@ -29,9 +30,27 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
   )
 }
 
+function MobileNavItem({ to, children, onClick }: { to: string; children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <NavLink
+      to={to}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `block px-4 py-3 text-sm font-medium transition-colors border-b border-border/50 ${
+          isActive
+            ? 'text-foreground bg-muted/50'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
+  )
+}
+
 import { clearToken, UNAUTHORIZED_EVENT } from '@/lib/api'
 import PasskeyManagerModal from '@/components/PasskeyManagerModal'
-import { Lock, Fingerprint } from 'lucide-react'
+import { Lock, Fingerprint, Menu, X } from 'lucide-react'
 
 function DarkModeToggle() {
   const [dark, setDark] = useState(() =>
@@ -73,8 +92,41 @@ function Brand() {
   )
 }
 
+function MobileMenuOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const location = useLocation()
+
+  // Close on route change
+  useEffect(() => {
+    onClose()
+  }, [location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isOpen) return null
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+        onClick={onClose}
+      />
+      {/* Menu panel */}
+      <div className="fixed top-[49px] left-0 right-0 z-50 bg-background border-b shadow-lg md:hidden animate-in slide-in-from-top-2 duration-200">
+        <nav className="flex flex-col">
+          <MobileNavItem to="/playground" onClick={onClose}>Playground</MobileNavItem>
+          <MobileNavItem to="/project-keys" onClick={onClose}>Project Keys</MobileNavItem>
+          <MobileNavItem to="/keys" onClick={onClose}>Provider Keys</MobileNavItem>
+          <MobileNavItem to="/cooldowns" onClick={onClose}>Cooldowns</MobileNavItem>
+          <MobileNavItem to="/fallback" onClick={onClose}>Fallback</MobileNavItem>
+          <MobileNavItem to="/analytics" onClick={onClose}>Analytics</MobileNavItem>
+        </nav>
+      </div>
+    </>
+  )
+}
+
 function App() {
   const [showPasskeyManager, setShowPasskeyManager] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   function handleLock() {
     clearToken()
@@ -88,9 +140,22 @@ function App() {
         <PasskeyManagerModal isOpen={showPasskeyManager} onClose={() => setShowPasskeyManager(false)} />
         <div className="min-h-screen bg-background">
           <header className="sticky top-0 z-40 bg-background/60 backdrop-blur-md border-b border-border/80">
-            <div className="max-w-6xl mx-auto px-6 flex items-center">
+            <div className="max-w-6xl mx-auto px-4 md:px-6 flex items-center">
               <Brand />
-              <nav className="flex items-center gap-6 ml-10">
+
+              {/* Mobile hamburger button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="Toggle navigation"
+                className="size-8 md:hidden ml-auto"
+              >
+                {mobileMenuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+              </Button>
+
+              {/* Desktop navigation */}
+              <nav className="hidden md:flex items-center gap-6 ml-10">
                 <NavItem to="/playground">Playground</NavItem>
                 <NavItem to="/project-keys">Project Keys</NavItem>
                 <NavItem to="/keys">Provider Keys</NavItem>
@@ -98,7 +163,20 @@ function App() {
                 <NavItem to="/fallback">Fallback</NavItem>
                 <NavItem to="/analytics">Analytics</NavItem>
               </nav>
-              <div className="ml-auto py-2 flex items-center gap-2">
+
+              {/* Action buttons */}
+              <div className="hidden md:flex ml-auto py-2 items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => setShowPasskeyManager(true)} aria-label="Manage Passkeys" className="size-8" title="Manage Passkeys & Biometrics">
+                  <Fingerprint className="size-4" />
+                </Button>
+                <DarkModeToggle />
+                <Button variant="ghost" size="icon" onClick={handleLock} aria-label="Lock Dashboard" className="size-8 text-muted-foreground hover:text-foreground" title="Lock Dashboard">
+                  <Lock className="size-4" />
+                </Button>
+              </div>
+
+              {/* Mobile action buttons (right side, next to hamburger) */}
+              <div className="flex md:hidden items-center gap-1">
                 <Button variant="ghost" size="icon" onClick={() => setShowPasskeyManager(true)} aria-label="Manage Passkeys" className="size-8" title="Manage Passkeys & Biometrics">
                   <Fingerprint className="size-4" />
                 </Button>
@@ -109,7 +187,11 @@ function App() {
               </div>
             </div>
           </header>
-          <main className="max-w-6xl mx-auto px-6 py-8">
+
+          {/* Mobile slide-down nav */}
+          <MobileMenuOverlay isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+
+          <main className="max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8">
             <Routes>
               <Route path="/" element={<Navigate to="/playground" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
