@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, type ReactNode, type FormEvent } from 'react'
 import { apiFetch, setToken, UNAUTHORIZED_EVENT } from '@/lib/api'
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
+import AdminGreetingLoader from '@/components/AdminGreetingLoader'
+import { Lock, Fingerprint } from 'lucide-react'
 
 interface AuthStatus {
   needsSetup: boolean
@@ -19,6 +21,9 @@ export async function registerDevicePasskey(): Promise<boolean> {
       method: 'POST',
       body: JSON.stringify(authResponse),
     })
+    try {
+      localStorage.setItem('freellmapi_has_passkeys', 'true')
+    } catch {}
     return true
   } catch (err: any) {
     alert(err.message || 'Passkey registration canceled or failed')
@@ -31,6 +36,14 @@ export default function AuthGate({ children }: AuthGateProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(false)
+  const [showGreeting, setShowGreeting] = useState(false)
+  const [adminEmail, setAdminEmail] = useState(() => {
+    try {
+      return localStorage.getItem('freellmapi_admin_email') || ''
+    } catch {
+      return ''
+    }
+  })
 
   const checkAuth = useCallback(async () => {
     try {
@@ -54,19 +67,24 @@ export default function AuthGate({ children }: AuthGateProps) {
     checkAuth()
   }, [checkAuth])
 
-  // Listen for unauthorized events (401 from api.ts)
+  // Listen for unauthorized events (401 from api.ts or manual lock)
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent
+      const isLocked = customEvent?.detail?.reason === 'locked'
       setStatus({ needsSetup: false, authenticated: false })
-      setError('Session expired. Please log in again.')
+      setShowGreeting(false)
+      setError(isLocked ? 'Console locked. Please authenticate to resume.' : 'Session expired. Please log in again.')
     }
     window.addEventListener(UNAUTHORIZED_EVENT, handler)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler)
   }, [])
 
-  const handleAuth = async (token: string) => {
+  const handleAuth = async (token: string, email?: string) => {
     setToken(token)
     setError('')
+    if (email) setAdminEmail(email)
+    setShowGreeting(true)
     setStatus({ needsSetup: false, authenticated: true })
     const passkeyCheck = await apiFetch<{ hasPasskeys: boolean }>('/api/auth/webauthn/has-passkeys').catch(() => ({ hasPasskeys: true }))
     if (!passkeyCheck.hasPasskeys) {
@@ -92,7 +110,13 @@ export default function AuthGate({ children }: AuthGateProps) {
 
   return (
     <>
-      {showPasskeyPrompt && (
+      {showGreeting && (
+        <AdminGreetingLoader
+          email={adminEmail}
+          onComplete={() => setShowGreeting(false)}
+        />
+      )}
+      {showPasskeyPrompt && !showGreeting && (
         <div className="bg-primary/10 border-b border-primary/20 text-foreground px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="text-xl">🔑</span>
@@ -129,21 +153,44 @@ function LoginForm({
   error,
   setError,
 }: {
-  onSuccess: (token: string) => void
+  onSuccess: (token: string, email?: string) => void
   error: string
   setError: (e: string) => void
 }) {
   const [view, setView] = useState<'login' | 'forgot-password'>('login')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem('freellmapi_admin_email') || ''
+    } catch {
+      return ''
+    }
+  })
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [hasPasskeys, setHasPasskeys] = useState(false)
+  const isWebAuthnSupported = typeof window !== 'undefined' && !!window.PublicKeyCredential
+  const [hasPasskeys, setHasPasskeys] = useState(() => {
+    try {
+      return localStorage.getItem('freellmapi_has_passkeys') === 'true' || isWebAuthnSupported
+    } catch {
+      return isWebAuthnSupported
+    }
+  })
 
   useEffect(() => {
     apiFetch<{ hasPasskeys: boolean }>('/api/auth/webauthn/has-passkeys')
-      .then(res => setHasPasskeys(res.hasPasskeys))
+      .then(res => {
+        setHasPasskeys(res.hasPasskeys || isWebAuthnSupported)
+        if (res.hasPasskeys) {
+          try {
+            localStorage.setItem('freellmapi_has_passkeys', 'true')
+          } catch {}
+        }
+      })
       .catch(() => {})
-  }, [])
+  }, [isWebAuthnSupported])
+
+  const isSessionExpired = !!error && (error.toLowerCase().includes('session expired') || error.toLowerCase().includes('locked'))
+  const isLocked = !!error && error.toLowerCase().includes('locked')
 
   if (view === 'forgot-password') {
     return <ForgotPasswordForm onSuccess={onSuccess} error={error} setError={setError} onBack={() => setView('login')} />
@@ -155,11 +202,14 @@ function LoginForm({
     setSubmitting(true)
 
     try {
-      const data = await apiFetch<{ token: string }>('/api/auth/login', {
+      const data = await apiFetch<{ token: string; user?: { id: number; email: string } }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       })
-      onSuccess(data.token)
+      try {
+        localStorage.setItem('freellmapi_admin_email', data.user?.email || email)
+      } catch {}
+      onSuccess(data.token, data.user?.email || email)
     } catch (err: any) {
       setError(err.message || 'Login failed')
     } finally {
@@ -173,52 +223,81 @@ function LoginForm({
     try {
       const options = await apiFetch<any>('/api/auth/webauthn/login-options', { method: 'POST' })
       const authResponse = await startAuthentication({ optionsJSON: options })
-      const data = await apiFetch<{ token: string }>('/api/auth/webauthn/login-verify', {
+      const data = await apiFetch<{ token: string; user?: { id: number; email: string } }>('/api/auth/webauthn/login-verify', {
         method: 'POST',
         body: JSON.stringify(authResponse),
       })
-      onSuccess(data.token)
+      if (data.user?.email) {
+        try {
+          localStorage.setItem('freellmapi_admin_email', data.user.email)
+        } catch {}
+      }
+      onSuccess(data.token, data.user?.email)
     } catch (err: any) {
-      setError(err.message || 'Passkey authentication canceled or failed')
+      const msg = err.message || ''
+      if (msg.includes('not recognized') || msg.includes('not registered') || msg.includes('No passkey')) {
+        setError('No passkey registered on this device yet. Sign in with password below, then tap the Fingerprint icon in the header to register biometrics.')
+      } else if (!msg.includes('canceled') && !msg.includes('cancelled') && !msg.includes('AbortError')) {
+        setError(msg || 'Passkey authentication canceled or failed')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
+  const showPasskeyOption = isSessionExpired || hasPasskeys || isWebAuthnSupported
+  const showSpecificError = !!error && (!isSessionExpired || error.toLowerCase().includes('failed') || error.toLowerCase().includes('invalid') || error.toLowerCase().includes('not registered'))
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="inline-block size-2 rounded-full bg-foreground" />
-            <span className="font-semibold tracking-tight text-sm text-foreground">FreeLLMAPI</span>
+        {isSessionExpired ? (
+          <div className="text-center mb-6">
+            <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center mx-auto mb-3 text-amber-500 dark:text-amber-400 shadow-xs">
+              <Lock className="size-6" />
+            </div>
+            <h1 className="text-xl font-semibold text-foreground">
+              {isLocked ? 'Console Locked' : 'Session Expired'}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Authenticate with biometrics, passkey, or password to resume
+            </p>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">Sign in to Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter your credentials to access the admin panel</p>
-        </div>
+        ) : (
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <span className="inline-block size-2 rounded-full bg-foreground" />
+              <span className="font-semibold tracking-tight text-sm text-foreground">FreeLLMAPI</span>
+            </div>
+            <h1 className="text-xl font-semibold text-foreground">Sign in to Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-1">Enter your credentials to access the admin panel</p>
+          </div>
+        )}
 
-        {hasPasskeys && (
+        {showPasskeyOption && (
           <div className="mb-6">
             <button
+              type="button"
               onClick={handlePasskeyLogin}
               disabled={submitting}
-              className="w-full rounded-md border-2 border-primary bg-primary/10 text-primary px-4 py-3 text-sm font-semibold hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+              className="w-full rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-4 py-3 text-sm font-semibold hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 flex items-center justify-center gap-2.5 disabled:opacity-50 transition-all shadow-xs group cursor-pointer"
             >
-              👆 Sign in with Fingerprint / Passkey
+              <Fingerprint className="size-5 group-hover:scale-110 transition-transform" />
+              <span>{isSessionExpired ? 'Unlock with Fingerprint / Passkey' : 'Sign in with Fingerprint / Passkey'}</span>
             </button>
-            <div className="relative mt-6 mb-4">
+            <div className="relative mt-5 mb-4">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">OR continue with password</span>
+                <span className="bg-background px-2 text-muted-foreground">OR enter password</span>
               </div>
             </div>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
+          {showSpecificError && (
             <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
@@ -285,7 +364,7 @@ function ForgotPasswordForm({
   setError,
   onBack,
 }: {
-  onSuccess: (token: string) => void
+  onSuccess: (token: string, email?: string) => void
   error: string
   setError: (e: string) => void
   onBack: () => void
@@ -338,11 +417,11 @@ function ForgotPasswordForm({
     setSubmitting(true)
 
     try {
-      const data = await apiFetch<{ token: string }>('/api/auth/reset-password', {
+      const data = await apiFetch<{ token: string; user?: { id: number; email: string } }>('/api/auth/reset-password', {
         method: 'POST',
         body: JSON.stringify({ email, code, newPassword }),
       })
-      onSuccess(data.token)
+      onSuccess(data.token, data.user?.email || email)
     } catch (err: any) {
       setError(err.message || 'Reset failed')
     } finally {
@@ -502,7 +581,7 @@ function SetupForm({
   error,
   setError,
 }: {
-  onSuccess: (token: string) => void
+  onSuccess: (token: string, email?: string) => void
   error: string
   setError: (e: string) => void
 }) {
@@ -534,11 +613,11 @@ function SetupForm({
         body.setupCode = setupCode.trim()
       }
 
-      const data = await apiFetch<{ token: string }>('/api/auth/setup', {
+      const data = await apiFetch<{ token: string; user?: { id: number; email: string } }>('/api/auth/setup', {
         method: 'POST',
         body: JSON.stringify(body),
       })
-      onSuccess(data.token)
+      onSuccess(data.token, data.user?.email || email)
     } catch (err: any) {
       setError(err.message || 'Setup failed')
     } finally {

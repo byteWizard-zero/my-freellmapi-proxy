@@ -76,7 +76,7 @@ function Brand() {
 function App() {
   function handleLock() {
     clearToken()
-    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT, { detail: { reason: 'locked' } }))
   }
 
   return (
