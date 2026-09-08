@@ -77,9 +77,14 @@ function LoginForm({
   error: string
   setError: (e: string) => void
 }) {
+  const [view, setView] = useState<'login' | 'forgot-password'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  if (view === 'forgot-password') {
+    return <ForgotPasswordForm onSuccess={onSuccess} error={error} setError={setError} onBack={() => setView('login')} />
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -135,9 +140,18 @@ function LoginForm({
           </div>
 
           <div>
-            <label htmlFor="login-password" className="block text-sm font-medium text-foreground mb-1.5">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="login-password" className="block text-sm font-medium text-foreground">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={() => setView('forgot-password')}
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline focus:outline-none"
+              >
+                Forgot password?
+              </button>
+            </div>
             <input
               id="login-password"
               type="password"
@@ -156,6 +170,224 @@ function LoginForm({
           >
             {submitting ? 'Signing in...' : 'Sign in'}
           </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Forgot Password Form ────────────────────────────────────────────────────
+
+function ForgotPasswordForm({
+  onSuccess,
+  error,
+  setError,
+  onBack,
+}: {
+  onSuccess: (token: string) => void
+  error: string
+  setError: (e: string) => void
+  onBack: () => void
+}) {
+  const [phase, setPhase] = useState<1 | 2>(1)
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function handleRequestCode(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+    setSubmitting(true)
+
+    try {
+      const data = await apiFetch<{ success: boolean; message: string }>('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      })
+      if (data.success) {
+        setPhase(2)
+        setMessage(data.message)
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to request code')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleReset(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    setSubmitting(true)
+
+    try {
+      const data = await apiFetch<{ token: string }>('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, code, newPassword }),
+      })
+      onSuccess(data.token)
+    } catch (err: any) {
+      setError(err.message || 'Reset failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (phase === 1) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <h1 className="text-xl font-semibold text-foreground">Forgot Password</h1>
+            <p className="text-sm text-muted-foreground mt-1">Enter your email to receive a reset code</p>
+          </div>
+
+          <form onSubmit={handleRequestCode} className="space-y-4">
+            {error && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="forgot-email" className="block text-sm font-medium text-foreground mb-1.5">
+                Email
+              </label>
+              <input
+                id="forgot-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="admin@example.com"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {submitting ? 'Sending...' : 'Send Reset Code'}
+              </button>
+              <button
+                type="button"
+                onClick={onBack}
+                disabled={submitting}
+                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+              >
+                Back to sign in
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <h1 className="text-xl font-semibold text-foreground">Reset Password</h1>
+          <p className="text-sm text-muted-foreground mt-1">Check your server logs (e.g. Render Dashboard Logs) for the 6-character code.</p>
+        </div>
+
+        <form onSubmit={handleReset} className="space-y-4">
+          {message && (
+            <div className="rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+              {message}
+            </div>
+          )}
+          {error && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="reset-code" className="block text-sm font-medium text-foreground mb-1.5">
+              Reset Code
+            </label>
+            <input
+              id="reset-code"
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              required
+              maxLength={6}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono tracking-widest text-center"
+              placeholder="ABC123"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="new-password" className="block text-sm font-medium text-foreground mb-1.5">
+              New Password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Minimum 8 characters"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="confirm-password" className="block text-sm font-medium text-foreground mb-1.5">
+              Confirm Password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {submitting ? 'Resetting...' : 'Reset & Log In'}
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={submitting}
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+            >
+              Back to sign in
+            </button>
+          </div>
         </form>
       </div>
     </div>
