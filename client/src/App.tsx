@@ -29,6 +29,10 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
   )
 }
 
+import { clearToken, UNAUTHORIZED_EVENT } from '@/lib/api'
+import { registerDevicePasskey } from '@/components/AuthGate'
+import { Lock, Fingerprint } from 'lucide-react'
+
 function DarkModeToggle() {
   const [dark, setDark] = useState(() =>
     typeof window !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -50,7 +54,7 @@ function DarkModeToggle() {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={toggle} aria-label="Toggle theme">
+    <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme" className="size-8">
       {dark ? (
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
       ) : (
@@ -70,6 +74,11 @@ function Brand() {
 }
 
 function App() {
+  function handleLock() {
+    clearToken()
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
@@ -86,8 +95,14 @@ function App() {
                 <NavItem to="/fallback">Fallback</NavItem>
                 <NavItem to="/analytics">Analytics</NavItem>
               </nav>
-              <div className="ml-auto py-2">
+              <div className="ml-auto py-2 flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => registerDevicePasskey()} aria-label="Register Passkey" className="size-8" title="Register Device Passkey">
+                  <Fingerprint className="size-4" />
+                </Button>
                 <DarkModeToggle />
+                <Button variant="ghost" size="icon" onClick={handleLock} aria-label="Lock Dashboard" className="size-8 text-muted-foreground hover:text-foreground" title="Lock Dashboard">
+                  <Lock className="size-4" />
+                </Button>
               </div>
             </div>
           </header>

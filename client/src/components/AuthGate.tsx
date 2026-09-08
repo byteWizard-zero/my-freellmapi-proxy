@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode, type FormEvent } from 'react'
 import { apiFetch, setToken, UNAUTHORIZED_EVENT } from '@/lib/api'
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 
 interface AuthStatus {
   needsSetup: boolean
@@ -10,15 +11,37 @@ interface AuthGateProps {
   children: ReactNode
 }
 
+export async function registerDevicePasskey(): Promise<boolean> {
+  try {
+    const options = await apiFetch<any>('/api/auth/webauthn/register-options', { method: 'POST' })
+    const authResponse = await startRegistration({ optionsJSON: options })
+    await apiFetch('/api/auth/webauthn/register-verify', {
+      method: 'POST',
+      body: JSON.stringify(authResponse),
+    })
+    return true
+  } catch (err: any) {
+    alert(err.message || 'Passkey registration canceled or failed')
+    return false
+  }
+}
+
 export default function AuthGate({ children }: AuthGateProps) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(false)
 
   const checkAuth = useCallback(async () => {
     try {
       const data = await apiFetch<AuthStatus>('/api/auth/status')
       setStatus(data)
+      if (data.authenticated) {
+        const passkeyCheck = await apiFetch<{ hasPasskeys: boolean }>('/api/auth/webauthn/has-passkeys').catch(() => ({ hasPasskeys: true }))
+        if (!passkeyCheck.hasPasskeys) {
+          setShowPasskeyPrompt(true)
+        }
+      }
     } catch {
       // If we can't reach the server, show login anyway
       setStatus({ needsSetup: false, authenticated: false })
@@ -41,10 +64,14 @@ export default function AuthGate({ children }: AuthGateProps) {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler)
   }, [])
 
-  const handleAuth = (token: string) => {
+  const handleAuth = async (token: string) => {
     setToken(token)
     setError('')
     setStatus({ needsSetup: false, authenticated: true })
+    const passkeyCheck = await apiFetch<{ hasPasskeys: boolean }>('/api/auth/webauthn/has-passkeys').catch(() => ({ hasPasskeys: true }))
+    if (!passkeyCheck.hasPasskeys) {
+      setShowPasskeyPrompt(true)
+    }
   }
 
   if (loading) {
@@ -63,7 +90,36 @@ export default function AuthGate({ children }: AuthGateProps) {
     return <LoginForm onSuccess={handleAuth} error={error} setError={setError} />
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {showPasskeyPrompt && (
+        <div className="bg-primary/10 border-b border-primary/20 text-foreground px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🔑</span>
+            <span className="text-sm">You haven't set up a Passkey yet. Set one up to sign in with your fingerprint or device PIN next time!</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                const success = await registerDevicePasskey()
+                if (success) setShowPasskeyPrompt(false)
+              }}
+              className="text-sm bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Set up Passkey
+            </button>
+            <button
+              onClick={() => setShowPasskeyPrompt(false)}
+              className="text-sm bg-transparent border border-border px-3 py-1.5 rounded-md hover:bg-muted transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      {children}
+    </>
+  )
 }
 
 // ─── Login Form ──────────────────────────────────────────────────────────────
@@ -81,6 +137,13 @@ function LoginForm({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [hasPasskeys, setHasPasskeys] = useState(false)
+
+  useEffect(() => {
+    apiFetch<{ hasPasskeys: boolean }>('/api/auth/webauthn/has-passkeys')
+      .then(res => setHasPasskeys(res.hasPasskeys))
+      .catch(() => {})
+  }, [])
 
   if (view === 'forgot-password') {
     return <ForgotPasswordForm onSuccess={onSuccess} error={error} setError={setError} onBack={() => setView('login')} />
@@ -104,6 +167,24 @@ function LoginForm({
     }
   }
 
+  async function handlePasskeyLogin() {
+    setError('')
+    setSubmitting(true)
+    try {
+      const options = await apiFetch<any>('/api/auth/webauthn/login-options', { method: 'POST' })
+      const authResponse = await startAuthentication({ optionsJSON: options })
+      const data = await apiFetch<{ token: string }>('/api/auth/webauthn/login-verify', {
+        method: 'POST',
+        body: JSON.stringify(authResponse),
+      })
+      onSuccess(data.token)
+    } catch (err: any) {
+      setError(err.message || 'Passkey authentication canceled or failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -115,6 +196,26 @@ function LoginForm({
           <h1 className="text-xl font-semibold text-foreground">Sign in to Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Enter your credentials to access the admin panel</p>
         </div>
+
+        {hasPasskeys && (
+          <div className="mb-6">
+            <button
+              onClick={handlePasskeyLogin}
+              disabled={submitting}
+              className="w-full rounded-md border-2 border-primary bg-primary/10 text-primary px-4 py-3 text-sm font-semibold hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+            >
+              👆 Sign in with Fingerprint / Passkey
+            </button>
+            <div className="relative mt-6 mb-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">OR continue with password</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -133,7 +234,7 @@ function LoginForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoFocus
+              autoFocus={!hasPasskeys}
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="admin@example.com"
             />
