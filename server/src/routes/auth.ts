@@ -6,6 +6,7 @@ import {
   checkBruteForce, recordFailedLogin, clearBruteForce 
 } from '../services/auth.js';
 import { validateSetupCode, clearSetupCode } from '../lib/setup-code.js';
+import { generateResetCode, validateResetCode, clearResetCode } from '../lib/reset-code.js';
 import { hashPassword } from '../lib/password.js';
 
 export const authRouter = Router();
@@ -104,4 +105,63 @@ authRouter.post('/change-password', (req, res) => {
 
   getDb().prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(newPassword), session.userId);
   res.json({ success: true });
+});
+
+authRouter.post('/forgot-password', (req, res) => {
+  if (userCount() === 0) {
+    res.status(400).json({ error: { message: 'Setup not completed yet', type: 'setup_required' } });
+    return;
+  }
+
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') {
+    res.status(400).json({ error: { message: 'Valid email is required', type: 'invalid_request' } });
+    return;
+  }
+
+  // Check if user exists (case-insensitive)
+  const user = getDb().prepare('SELECT id, email FROM users WHERE email = ? COLLATE NOCASE').get(email) as any;
+  if (user) {
+    generateResetCode(user.email);
+  }
+
+  // Always return success to avoid leaking account existence, but log code if found
+  res.json({ success: true, message: 'If this email is registered, a 6-character reset code was logged to the server logs.' });
+});
+
+authRouter.post('/reset-password', (req, res) => {
+  const { email, code, newPassword } = req.body;
+
+  if (!email || !code || !newPassword) {
+    res.status(400).json({ error: { message: 'Email, reset code, and new password are required', type: 'invalid_request' } });
+    return;
+  }
+
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    res.status(400).json({ error: { message: 'Password must be at least 8 characters', type: 'invalid_request' } });
+    return;
+  }
+
+  if (!validateResetCode(email, code)) {
+    res.status(400).json({ error: { message: 'Invalid or expired reset code. Please check your server logs or request a new code.', type: 'invalid_code' } });
+    return;
+  }
+
+  const user = getDb().prepare('SELECT id, email FROM users WHERE email = ? COLLATE NOCASE').get(email) as any;
+  if (!user) {
+    res.status(400).json({ error: { message: 'User not found', type: 'not_found' } });
+    return;
+  }
+
+  // Update password
+  getDb().prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(newPassword), user.id);
+
+  // Invalidate any previous sessions
+  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+
+  clearResetCode();
+
+  // Create new session token and return
+  const token = createSession(user.id);
+  res.json({ token, user: { id: user.id, email: user.email } });
 });
