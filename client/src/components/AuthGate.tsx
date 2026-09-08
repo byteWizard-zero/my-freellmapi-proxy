@@ -605,12 +605,18 @@ function SetupForm({
       return
     }
 
+    if (!setupCode.trim() || setupCode.trim().length !== 6) {
+      setError('6-character setup code from server console logs is required')
+      return
+    }
+
     setSubmitting(true)
 
     try {
-      const body: Record<string, string> = { email, password }
-      if (setupCode.trim()) {
-        body.setupCode = setupCode.trim()
+      const body = {
+        email: email.trim(),
+        password,
+        setupCode: setupCode.trim(),
       }
 
       const data = await apiFetch<{ token: string; user?: { id: number; email: string } }>('/api/auth/setup', {
@@ -693,13 +699,15 @@ function SetupForm({
 
           <div>
             <label htmlFor="setup-code" className="block text-sm font-medium text-foreground mb-1.5">
-              Setup Code <span className="text-muted-foreground font-normal">(from server logs, required for remote access)</span>
+              Setup Code <span className="text-destructive">*</span> <span className="text-muted-foreground font-normal">(6-character code from server logs)</span>
             </label>
             <input
               id="setup-code"
               type="text"
               value={setupCode}
               onChange={(e) => setSetupCode(e.target.value.toUpperCase())}
+              required
+              minLength={6}
               maxLength={6}
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono tracking-widest text-center"
               placeholder="ABC123"
@@ -716,7 +724,7 @@ function SetupForm({
         </form>
 
         <p className="text-xs text-muted-foreground text-center mt-4">
-          If connecting remotely, check your server logs (e.g. Render dashboard logs) for the 6-character setup code.
+          Check your server console logs (terminal or cloud dashboard) for the required 6-character setup code printed at boot.
         </p>
       </div>
     </div>

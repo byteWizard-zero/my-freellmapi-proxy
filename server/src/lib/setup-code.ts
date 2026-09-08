@@ -11,11 +11,25 @@ export function getSetupCode(): string | null {
   return setupCode;
 }
 
+export function getOrCreateSetupCode(): string {
+  if (!setupCode) {
+    generateSetupCode();
+  }
+  return setupCode!;
+}
+
 export function clearSetupCode(): void {
   setupCode = null;
 }
 
 export function validateSetupCode(input: string | undefined): boolean {
-  if (!setupCode || !input) return false;
-  return input.toUpperCase() === setupCode;
+  if (!setupCode) {
+    const code = getOrCreateSetupCode();
+    console.log(`\n========================================`);
+    console.log(`  Dashboard setup code: ${code}`);
+    console.log(`  (Required for admin account setup)`);
+    console.log(`========================================\n`);
+  }
+  if (!input) return false;
+  return input.trim().toUpperCase() === setupCode;
 }

@@ -20,7 +20,7 @@ async function main() {
     const code = generateSetupCode();
     console.log(`\n========================================`);
     console.log(`  Dashboard setup code: ${code}`);
-    console.log(`  (Required for first-time remote setup)`);
+    console.log(`  (Required for admin account setup)`);
     console.log(`========================================\n`);
     startHealthChecker();
     startKeepAlive();

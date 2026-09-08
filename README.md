@@ -166,25 +166,19 @@ All management API routes (`/api/*`) require an authenticated admin session toke
 
 When you run FreeLLMAPI for the first time, no admin account exists yet. Opening the web interface displays the **Create Admin Account** screen.
 
-#### Option A: Local Setup (`http://localhost:5173` or `http://localhost:3001`)
-1. Open the dashboard in your browser.
-2. Enter your desired admin **Email** and a **Password** (minimum 8 characters).
-3. Confirm your password.
-4. On local loopback connections (`127.0.0.1` / `::1`), the **Setup Code** is not required. Click **Create Account**.
+For security, FreeLLMAPI strictly enforces an **AND gate** requiring three credentials together: **Admin Email**, **Password**, AND the **6-character Setup Code**:
 
-#### Option B: Remote or Cloud Deployment (Render, Railway, Docker, VPS)
-To prevent unauthorized parties from claiming ownership when the proxy boots on a public IP or cloud platform:
-1. Open your deployed dashboard URL (e.g. `https://your-proxy.onrender.com`).
-2. Inspect your server console logs (e.g. Render Dashboard **Logs** tab or `docker logs <container_id>`). On startup, the server generates and displays an ephemeral 6-character code:
+1. Open your dashboard URL (`http://localhost:5173`, `http://localhost:3001`, or your remote cloud URL).
+2. Check your server console logs (terminal output, Docker container logs, or cloud platform logs). On startup, the server generates and displays an ephemeral 6-character code:
    ```text
    ========================================
      Dashboard setup code: 9A4F2E
-     (Required for first-time remote setup)
+     (Required for admin account setup)
    ========================================
    ```
-3. Enter your **Email**, **Password**, and this **6-character Setup Code** in the registration form.
+3. Enter your **Email**, a strong **Password** (minimum 8 characters), and this **6-character Setup Code** into the registration form.
 4. Click **Create Account**.
-5. Once your account is created, the setup code is permanently purged from memory.
+5. Once your account is created, the setup code is permanently purged from memory, claiming admin ownership.
 
 ---
 

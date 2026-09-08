@@ -35,17 +35,16 @@ authRouter.post('/setup', (req, res) => {
     return;
   }
 
-  const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-  if (!isLocal) {
-    if (!validateSetupCode(req.body.setupCode)) {
-      res.status(403).json({ error: { message: 'Invalid setup code. Check server logs.', type: 'invalid_setup_code' } });
-      return;
-    }
+  const { email, password, setupCode } = req.body;
+
+  // Strict AND gate: setupCode, email, and password are all required
+  if (!setupCode || typeof setupCode !== 'string' || !validateSetupCode(setupCode)) {
+    res.status(403).json({ error: { message: 'Valid 6-character setup code is required. Check server console logs.', type: 'invalid_setup_code' } });
+    return;
   }
 
-  const { email, password } = req.body;
   if (!email || typeof email !== 'string' || !email.includes('@')) {
-    res.status(400).json({ error: { message: 'Invalid email', type: 'invalid_request' } });
+    res.status(400).json({ error: { message: 'Valid email is required', type: 'invalid_request' } });
     return;
   }
   if (!password || typeof password !== 'string' || password.length < 8) {
