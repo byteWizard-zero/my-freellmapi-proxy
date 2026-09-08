@@ -5,7 +5,9 @@ export const UNAUTHORIZED_EVENT = 'freellmapi:unauthorized';
 
 export function getToken(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    // Clear legacy localStorage token if present
+    localStorage.removeItem(TOKEN_KEY);
+    return sessionStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
@@ -13,17 +15,18 @@ export function getToken(): string | null {
 
 export function setToken(token: string): void {
   try {
-    localStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem(TOKEN_KEY, token);
   } catch {
-    // localStorage unavailable
+    // sessionStorage unavailable
   }
 }
 
 export function clearToken(): void {
   try {
+    sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY);
   } catch {
-    // localStorage unavailable
+    // storage unavailable
   }
 }
 
