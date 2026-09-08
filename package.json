@@ -14,7 +14,8 @@
     "build": "npm run build -w server && npm run build -w client",
     "build:server": "npm run build -w server",
     "start": "npm run start -w server",
-    "sync-keys": "node scripts/sync-sibling-keys.js"
+    "sync-keys": "node scripts/sync-sibling-keys.js",
+    "cleanup-passkeys": "node scripts/cleanup-passkeys.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

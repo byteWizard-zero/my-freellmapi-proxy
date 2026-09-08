@@ -30,7 +30,7 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
 }
 
 import { clearToken, UNAUTHORIZED_EVENT } from '@/lib/api'
-import { registerDevicePasskey } from '@/components/AuthGate'
+import PasskeyManagerModal from '@/components/PasskeyManagerModal'
 import { Lock, Fingerprint } from 'lucide-react'
 
 function DarkModeToggle() {
@@ -74,6 +74,8 @@ function Brand() {
 }
 
 function App() {
+  const [showPasskeyManager, setShowPasskeyManager] = useState(false)
+
   function handleLock() {
     clearToken()
     window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT, { detail: { reason: 'locked' } }))
@@ -83,6 +85,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthGate>
+        <PasskeyManagerModal isOpen={showPasskeyManager} onClose={() => setShowPasskeyManager(false)} />
         <div className="min-h-screen bg-background">
           <header className="sticky top-0 z-40 bg-background/60 backdrop-blur-md border-b border-border/80">
             <div className="max-w-6xl mx-auto px-6 flex items-center">
@@ -96,7 +99,7 @@ function App() {
                 <NavItem to="/analytics">Analytics</NavItem>
               </nav>
               <div className="ml-auto py-2 flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={() => registerDevicePasskey()} aria-label="Register Passkey" className="size-8" title="Register Device Passkey">
+                <Button variant="ghost" size="icon" onClick={() => setShowPasskeyManager(true)} aria-label="Manage Passkeys" className="size-8" title="Manage Passkeys & Biometrics">
                   <Fingerprint className="size-4" />
                 </Button>
                 <DarkModeToggle />
