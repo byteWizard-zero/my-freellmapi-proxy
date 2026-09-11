@@ -261,7 +261,7 @@ completionsRouter.post('/', async (req: Request, res: Response) => {
       if (isRetryableError(err)) {
         const skipId = `${route.platform}:${route.modelId}:${route.keyId}`;
         skipKeys.add(skipId);
-        setCooldown(route.platform, route.modelId, route.keyId, 43_200_000, err.message);
+        setCooldown(route.platform, route.modelId, route.keyId, undefined, err.message);
         recordRateLimitHit(route.modelDbId);
         lastError = err;
         continue;

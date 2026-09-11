@@ -115,7 +115,25 @@ export interface CooldownInfo {
 
 const cooldowns = new Map<number, CooldownInfo>(); // keyId -> CooldownInfo
 
-export function setCooldown(platform: string, modelId: string, keyId: number, durationMs = 43_200_000, errorMessage = '') {
+export function getCooldownDurationMs(): number {
+  if (process.env.COOLDOWN_MS) {
+    const ms = parseInt(process.env.COOLDOWN_MS, 10);
+    if (!isNaN(ms) && ms > 0) return ms;
+  }
+  if (process.env.COOLDOWN_MINUTES) {
+    const mins = parseFloat(process.env.COOLDOWN_MINUTES);
+    if (!isNaN(mins) && mins > 0) return Math.round(mins * 60 * 1000);
+  }
+  return 3_600_000; // default: 1 hour (60 minutes)
+}
+
+export function setCooldown(
+  platform: string,
+  modelId: string,
+  keyId: number,
+  durationMs = getCooldownDurationMs(),
+  errorMessage = '',
+) {
   cooldowns.set(keyId, {
     keyId,
     platform,
@@ -124,6 +142,15 @@ export function setCooldown(platform: string, modelId: string, keyId: number, du
     expiry: Date.now() + durationMs,
   });
 }
+
+export function removeCooldown(keyId: number): boolean {
+  return cooldowns.delete(keyId);
+}
+
+export function clearAllCooldowns(): void {
+  cooldowns.clear();
+}
+
 
 export function isOnCooldown(platform: string, modelId: string, keyId: number): boolean {
   const info = cooldowns.get(keyId);

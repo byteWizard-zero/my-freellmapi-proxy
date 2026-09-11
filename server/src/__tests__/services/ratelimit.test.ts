@@ -5,6 +5,11 @@ import {
   recordRequest,
   recordTokens,
   getRateLimitStatus,
+  setCooldown,
+  isOnCooldown,
+  removeCooldown,
+  clearAllCooldowns,
+  getCooldownDurationMs,
 } from '../../services/ratelimit.js';
 
 describe('Rate Limiter', () => {
@@ -77,4 +82,57 @@ describe('Rate Limiter', () => {
       expect(status.tpm.used).toBe(500);
     });
   });
+
+  describe('Cooldown & Wake-up Management', () => {
+    it('should put key on cooldown and check status', () => {
+      expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(false);
+      setCooldown('groq', 'llama-70b', testId, 60_000, 'Rate limit error');
+      expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(true);
+    });
+
+    it('should remove specific key from cooldown (Wake Up)', () => {
+      setCooldown('groq', 'llama-70b', testId, 60_000, 'Rate limit error');
+      expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(true);
+
+      const removed = removeCooldown(testId);
+      expect(removed).toBe(true);
+      expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(false);
+    });
+
+    it('should clear all cooldowns (Wake Up All)', () => {
+      const id1 = testId + 1;
+      const id2 = testId + 2;
+      setCooldown('groq', 'llama-70b', id1, 60_000, 'Error 1');
+      setCooldown('google', 'gemini', id2, 60_000, 'Error 2');
+      expect(isOnCooldown('groq', 'llama-70b', id1)).toBe(true);
+      expect(isOnCooldown('google', 'gemini', id2)).toBe(true);
+
+      clearAllCooldowns();
+      expect(isOnCooldown('groq', 'llama-70b', id1)).toBe(false);
+      expect(isOnCooldown('google', 'gemini', id2)).toBe(false);
+    });
+
+    it('should resolve default cooldown duration to 1 hour (3,600,000 ms) or env setting', () => {
+      const originalMinutes = process.env.COOLDOWN_MINUTES;
+      const originalMs = process.env.COOLDOWN_MS;
+      try {
+        delete process.env.COOLDOWN_MS;
+        delete process.env.COOLDOWN_MINUTES;
+        expect(getCooldownDurationMs()).toBe(3_600_000);
+
+        process.env.COOLDOWN_MINUTES = '15';
+        expect(getCooldownDurationMs()).toBe(15 * 60 * 1000);
+
+        process.env.COOLDOWN_MS = '120000';
+        expect(getCooldownDurationMs()).toBe(120000);
+      } finally {
+        if (originalMinutes !== undefined) process.env.COOLDOWN_MINUTES = originalMinutes;
+        else delete process.env.COOLDOWN_MINUTES;
+
+        if (originalMs !== undefined) process.env.COOLDOWN_MS = originalMs;
+        else delete process.env.COOLDOWN_MS;
+      }
+    });
+  });
 });
+

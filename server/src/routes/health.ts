@@ -4,7 +4,7 @@ import { getDb } from '../db/index.js';
 import { checkKeyHealth, checkAllKeys } from '../services/health.js';
 import { hasProvider } from '../providers/index.js';
 import { decrypt, maskKey } from '../lib/crypto.js';
-import { getActiveCooldowns } from '../services/ratelimit.js';
+import { getActiveCooldowns, removeCooldown, clearAllCooldowns, getCooldownDurationMs } from '../services/ratelimit.js';
 
 export const healthRouter = Router();
 
@@ -78,6 +78,7 @@ healthRouter.get('/', (_req: Request, res: Response) => {
         maskedKey,
       };
     }),
+    cooldownDurationMinutes: Math.round(getCooldownDurationMs() / 60000),
   });
 });
 
@@ -99,3 +100,36 @@ healthRouter.post('/check-all', async (req: Request, res: Response) => {
   await checkAllKeys(mode);
   res.json({ success: true });
 });
+
+// Wake up a specific key from cooldown
+healthRouter.post('/cooldowns/:keyId/wake', (req: Request, res: Response) => {
+  const keyId = parseInt(req.params.keyId as string, 10);
+  if (isNaN(keyId)) {
+    res.status(400).json({ error: { message: 'Invalid key ID' } });
+    return;
+  }
+  const removed = removeCooldown(keyId);
+  res.json({ success: true, keyId, removed });
+});
+
+healthRouter.delete('/cooldowns/:keyId', (req: Request, res: Response) => {
+  const keyId = parseInt(req.params.keyId as string, 10);
+  if (isNaN(keyId)) {
+    res.status(400).json({ error: { message: 'Invalid key ID' } });
+    return;
+  }
+  const removed = removeCooldown(keyId);
+  res.json({ success: true, keyId, removed });
+});
+
+// Wake up all keys from cooldown
+healthRouter.post('/cooldowns/wake-all', (_req: Request, res: Response) => {
+  clearAllCooldowns();
+  res.json({ success: true });
+});
+
+healthRouter.delete('/cooldowns', (_req: Request, res: Response) => {
+  clearAllCooldowns();
+  res.json({ success: true });
+});
+

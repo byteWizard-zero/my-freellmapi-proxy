@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 import { PageHeader } from '@/components/page-header'
-import { AlertCircle, Clock, RefreshCw, Sun } from 'lucide-react'
+import { AlertCircle, Clock, RefreshCw, Sun, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface CooldownInfo {
@@ -18,6 +18,7 @@ interface CooldownInfo {
 
 interface HealthData {
   cooldowns: CooldownInfo[]
+  cooldownDurationMinutes?: number
 }
 
 function formatRemainingTime(seconds: number): string {
@@ -30,7 +31,17 @@ function formatRemainingTime(seconds: number): string {
   return `${s}s`
 }
 
-function CooldownCard({ item, onExpire }: { item: CooldownInfo; onExpire: () => void }) {
+function CooldownCard({
+  item,
+  onExpire,
+  onWake,
+  isWaking,
+}: {
+  item: CooldownInfo
+  onExpire: () => void
+  onWake: (keyId: number) => void
+  isWaking: boolean
+}) {
   const [secondsLeft, setSecondsLeft] = useState(() => {
     const diff = Math.max(0, Math.ceil((new Date(item.expiry).getTime() - Date.now()) / 1000))
     return diff
@@ -74,9 +85,22 @@ function CooldownCard({ item, onExpire }: { item: CooldownInfo; onExpire: () => 
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-md flex-shrink-0">
-          <Clock className="size-3.5 text-amber-500 animate-spin-slow" />
-          <span className="tabular-nums">{formatRemainingTime(secondsLeft)}</span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-md">
+            <Clock className="size-3.5 text-amber-500 animate-spin-slow" />
+            <span className="tabular-nums">{formatRemainingTime(secondsLeft)}</span>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-200 gap-1.5"
+            onClick={() => onWake(item.keyId)}
+            disabled={isWaking}
+          >
+            <Zap className="size-3 text-amber-500 fill-amber-500/20" />
+            {isWaking ? 'Waking...' : 'Wake Up'}
+          </Button>
         </div>
       </div>
 
@@ -102,7 +126,26 @@ export default function CooldownsPage() {
     refetchInterval: 30000,
   })
 
+  const wakeMutation = useMutation({
+    mutationFn: (keyId: number) =>
+      apiFetch(`/api/health/cooldowns/${keyId}/wake`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['health'] })
+    },
+  })
+
+  const wakeAllMutation = useMutation({
+    mutationFn: () =>
+      apiFetch('/api/health/cooldowns/wake-all', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['health'] })
+    },
+  })
+
   const cooldowns = data?.cooldowns ?? []
+  const durationText = data?.cooldownDurationMinutes
+    ? `${data.cooldownDurationMinutes} min`
+    : '1 hour'
 
   function handleExpire() {
     // Invalidate query to trigger immediate refetch when cooldown ends
@@ -113,12 +156,26 @@ export default function CooldownsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Sleeping Keys"
-        description="API credentials that are temporarily suspended due to rate limits or transient errors. Cooldowns last for 1 hour."
+        description={`API credentials temporarily suspended due to rate limits or transient errors. Cooldown duration: ${durationText} (configurable via COOLDOWN_MINUTES).`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading || isRefetching}>
-            <RefreshCw className={`size-3.5 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {cooldowns.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-200"
+                onClick={() => wakeAllMutation.mutate()}
+                disabled={wakeAllMutation.isPending}
+              >
+                <Zap className="size-3.5 mr-1.5 text-amber-500 fill-amber-500/20" />
+                {wakeAllMutation.isPending ? 'Waking All...' : 'Wake Up All'}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading || isRefetching}>
+              <RefreshCw className={`size-3.5 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -139,10 +196,17 @@ export default function CooldownsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {cooldowns.map((c, idx) => (
-            <CooldownCard key={idx} item={c} onExpire={handleExpire} />
+            <CooldownCard
+              key={idx}
+              item={c}
+              onExpire={handleExpire}
+              onWake={(id) => wakeMutation.mutate(id)}
+              isWaking={wakeMutation.isPending && wakeMutation.variables === c.keyId}
+            />
           ))}
         </div>
       )}
     </div>
   )
 }
+
