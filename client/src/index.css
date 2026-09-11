@@ -193,3 +193,17 @@
         transform: rotate(360deg);
     }
 }
+
+/* Responsive visibility helpers (bulletproof across all browsers & screen zooms) */
+@media (max-width: 767px) {
+    .desktop-only {
+        display: none !important;
+    }
+}
+
+@media (min-width: 768px) {
+    .mobile-only {
+        display: none !important;
+    }
+}
+

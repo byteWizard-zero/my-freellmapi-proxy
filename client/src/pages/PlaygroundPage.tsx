@@ -682,7 +682,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <MessageSquare className="size-3.5" />
-              <span className="hidden sm:inline">Chat & Vision</span>
+              <span>Chat & Vision</span>
             </button>
             <button
               onClick={() => setActiveTab('images')}
@@ -693,7 +693,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <ImageIcon className="size-3.5 text-pink-500" />
-              <span className="hidden sm:inline">Image Studio</span>
+              <span>Image Studio</span>
             </button>
             <button
               onClick={() => setActiveTab('audio')}
@@ -704,7 +704,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <Volume2 className="size-3.5 text-blue-500" />
-              <span className="hidden sm:inline">Audio Lab</span>
+              <span>Audio Lab</span>
             </button>
             <button
               onClick={() => setActiveTab('embeddings')}
@@ -715,7 +715,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <Binary className="size-3.5 text-emerald-500" />
-              <span className="hidden sm:inline">Embeddings</span>
+              <span>Embeddings</span>
             </button>
             <button
               onClick={() => setActiveTab('moderations')}
@@ -726,7 +726,7 @@ export default function PlaygroundPage() {
               }`}
             >
               <ShieldAlert className="size-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Moderation</span>
+              <span>Moderation</span>
             </button>
           </div>
         }

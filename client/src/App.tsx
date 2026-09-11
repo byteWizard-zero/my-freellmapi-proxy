@@ -106,11 +106,11 @@ function MobileMenuOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm mobile-only"
         onClick={onClose}
       />
       {/* Menu panel */}
-      <div className="fixed top-[49px] left-0 right-0 z-50 bg-background border-b shadow-lg md:hidden animate-in slide-in-from-top-2 duration-200">
+      <div className="fixed top-[49px] left-0 right-0 z-50 bg-background border-b shadow-lg mobile-only animate-in slide-in-from-top-2 duration-200">
         <nav className="flex flex-col">
           <MobileNavItem to="/playground" onClick={onClose}>Playground</MobileNavItem>
           <MobileNavItem to="/project-keys" onClick={onClose}>Project Keys</MobileNavItem>
@@ -143,19 +143,8 @@ function App() {
             <div className="max-w-6xl mx-auto px-4 md:px-6 flex items-center">
               <Brand />
 
-              {/* Mobile hamburger button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                aria-label="Toggle navigation"
-                className="size-8 md:hidden ml-auto"
-              >
-                {mobileMenuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
-              </Button>
-
-              {/* Desktop navigation */}
-              <nav className="hidden md:flex items-center gap-6 ml-10">
+              {/* Desktop navigation - ALWAYS visible on desktop/PC */}
+              <nav className="desktop-only flex items-center gap-6 ml-10">
                 <NavItem to="/playground">Playground</NavItem>
                 <NavItem to="/project-keys">Project Keys</NavItem>
                 <NavItem to="/keys">Provider Keys</NavItem>
@@ -164,8 +153,8 @@ function App() {
                 <NavItem to="/analytics">Analytics</NavItem>
               </nav>
 
-              {/* Action buttons */}
-              <div className="hidden md:flex ml-auto py-2 items-center gap-2">
+              {/* Action buttons - ALWAYS visible on both desktop and mobile */}
+              <div className="ml-auto py-2 flex items-center gap-2">
                 <Button variant="ghost" size="icon" onClick={() => setShowPasskeyManager(true)} aria-label="Manage Passkeys" className="size-8" title="Manage Passkeys & Biometrics">
                   <Fingerprint className="size-4" />
                 </Button>
@@ -173,16 +162,17 @@ function App() {
                 <Button variant="ghost" size="icon" onClick={handleLock} aria-label="Lock Dashboard" className="size-8 text-muted-foreground hover:text-foreground" title="Lock Dashboard">
                   <Lock className="size-4" />
                 </Button>
-              </div>
 
-              {/* Mobile action buttons (right side, next to hamburger) */}
-              <div className="flex md:hidden items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={() => setShowPasskeyManager(true)} aria-label="Manage Passkeys" className="size-8" title="Manage Passkeys & Biometrics">
-                  <Fingerprint className="size-4" />
-                </Button>
-                <DarkModeToggle />
-                <Button variant="ghost" size="icon" onClick={handleLock} aria-label="Lock Dashboard" className="size-8 text-muted-foreground hover:text-foreground" title="Lock Dashboard">
-                  <Lock className="size-4" />
+                {/* Mobile hamburger button - visible ONLY on mobile */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  aria-label="Toggle navigation"
+                  className="mobile-only size-8"
+                  title="Toggle Navigation Menu"
+                >
+                  {mobileMenuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
                 </Button>
               </div>
             </div>
