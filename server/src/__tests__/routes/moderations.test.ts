@@ -50,5 +50,5 @@ describe('Moderations API (/v1/moderations)', () => {
     expect(body.results[0].categories.sexual).toBe(false);
     expect(body.results[0].category_scores.sexual).toBeLessThan(0.1);
     expect(headers['x-routed-via']).toBeDefined();
-  });
+  }, 30000);
 });

@@ -240,18 +240,36 @@ function isRetryableError(err: any): boolean {
     || msg.includes('aborted') || msg.includes('timeout') || msg.includes('etimedout')
     || msg.includes('econnrefused') || msg.includes('econnreset')
     || msg.includes('503') || msg.includes('unavailable')
-    || msg.includes('500') || msg.includes('internal server error');
+    || msg.includes('500') || msg.includes('internal server error')
+    || msg.includes('502') || msg.includes('bad gateway')
+    || msg.includes('504') || msg.includes('gateway timeout')
+    || msg.includes('402') || msg.includes('payment') || msg.includes('free plan') || msg.includes('upgrade')
+    || msg.includes('subscription') || msg.includes('overloaded') || msg.includes('capacity');
 }
 
 function isModelNotFoundError(err: any): boolean {
   const msg = (err.message ?? '').toLowerCase();
   return msg.includes('404')
+    || msg.includes('410')
+    || msg.includes('retired')
+    || msg.includes('decommissioned')
     || msg.includes('model not found')
     || msg.includes('does not exist')
     || msg.includes('no longer available')
     || msg.includes('unknown model')
     || msg.includes('unavailable_model')
     || msg.includes('unavailable model');
+}
+
+function isNotFreeError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('402')
+    || msg.includes('not in the free plan')
+    || msg.includes('requires a subscription')
+    || msg.includes('payment required')
+    || msg.includes('upgrade')
+    || msg.includes('insufficient_quota')
+    || msg.includes('credit');
 }
 
 function isInvalidKeyError(err: any): boolean {
@@ -726,12 +744,13 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
 
       const isModelNotFound = isModelNotFoundError(err);
       const isInvalidKey = isInvalidKeyError(err);
+      const isNotFree = isNotFreeError(err);
 
-      if (isModelNotFound) {
+      if (isModelNotFound || isNotFree) {
         try {
           const db = getDb();
           db.prepare('UPDATE models SET enabled = 0 WHERE id = ?').run(route.modelDbId);
-          console.warn(`[Proxy] Model '${route.modelId}' on platform '${route.platform}' returned 404 (not found). Automatically disabling this model in the database.`);
+          console.warn(`[Proxy] Model '${route.modelId}' on platform '${route.platform}' disabled (${err.message}).`);
         } catch (dbErr) {
           console.error('[Proxy] Failed to disable model in DB:', dbErr);
         }
@@ -747,7 +766,9 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         }
       }
 
-      if (isRetryableError(err) || isModelNotFound || isInvalidKey) {
+      // If fallback is enabled (!forceModel, default), retry next model on ANY upstream error.
+      // If client explicitly pinned this model with x-disable-fallback, only retry transient errors.
+      if (!forceModel || isRetryableError(err)) {
         // Put this model+key on cooldown and try the next one
         const skipId = `${route.platform}:${route.modelId}:${route.keyId}`;
         skipKeys.add(skipId);
@@ -758,7 +779,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         continue;
       }
 
-      // Non-retryable error (other 4xx, etc.): don't retry
+      // Non-retryable error only when client pinned a specific model and requested no fallback
       res.status(502).json({
         error: {
           message: `Provider error (${route.displayName}): ${err.message}`,

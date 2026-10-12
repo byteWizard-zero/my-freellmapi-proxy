@@ -37,7 +37,47 @@ function isRetryableError(err: any): boolean {
     || msg.includes('aborted') || msg.includes('timeout') || msg.includes('etimedout')
     || msg.includes('econnrefused') || msg.includes('econnreset')
     || msg.includes('503') || msg.includes('unavailable')
-    || msg.includes('500') || msg.includes('internal server error');
+    || msg.includes('500') || msg.includes('internal server error')
+    || msg.includes('502') || msg.includes('bad gateway')
+    || msg.includes('504') || msg.includes('gateway timeout')
+    || msg.includes('402') || msg.includes('payment') || msg.includes('free plan') || msg.includes('upgrade')
+    || msg.includes('subscription') || msg.includes('overloaded') || msg.includes('capacity');
+}
+
+function isModelNotFoundError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('404')
+    || msg.includes('410')
+    || msg.includes('retired')
+    || msg.includes('decommissioned')
+    || msg.includes('model not found')
+    || msg.includes('does not exist')
+    || msg.includes('no longer available')
+    || msg.includes('unknown model')
+    || msg.includes('unavailable_model')
+    || msg.includes('unavailable model');
+}
+
+function isNotFreeError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('402')
+    || msg.includes('not in the free plan')
+    || msg.includes('requires a subscription')
+    || msg.includes('payment required')
+    || msg.includes('upgrade')
+    || msg.includes('insufficient_quota')
+    || msg.includes('credit');
+}
+
+function isInvalidKeyError(err: any): boolean {
+  const msg = (err.message ?? '').toLowerCase();
+  return msg.includes('401')
+    || msg.includes('403')
+    || msg.includes('unauthorized')
+    || msg.includes('invalid api key')
+    || msg.includes('invalid key')
+    || msg.includes('authentication')
+    || msg.includes('forbidden');
 }
 
 completionsRouter.post('/', async (req: Request, res: Response) => {
@@ -258,7 +298,25 @@ completionsRouter.post('/', async (req: Request, res: Response) => {
         return;
       }
     } catch (err: any) {
-      if (isRetryableError(err)) {
+      const isModelNotFound = isModelNotFoundError(err);
+      const isInvalidKey = isInvalidKeyError(err);
+      const isNotFree = isNotFreeError(err);
+
+      if (isModelNotFound || isNotFree) {
+        try {
+          const db = getDb();
+          db.prepare('UPDATE models SET enabled = 0 WHERE id = ?').run(route.modelDbId);
+        } catch {}
+      }
+
+      if (isInvalidKey) {
+        try {
+          const db = getDb();
+          db.prepare("UPDATE api_keys SET status = 'invalid', enabled = 0 WHERE id = ?").run(route.keyId);
+        } catch {}
+      }
+
+      if (isRetryableError(err) || isModelNotFound || isInvalidKey || isNotFree) {
         const skipId = `${route.platform}:${route.modelId}:${route.keyId}`;
         skipKeys.add(skipId);
         setCooldown(route.platform, route.modelId, route.keyId, undefined, err.message);

@@ -29,9 +29,10 @@ describe('Routing Key Exhaustion', () => {
     initDb(':memory:');
     const db = getDb();
     
-    // Clear default seeded models to test isolated priority sequence
+    // Clear default seeded models and keys to test isolated priority sequence
     db.prepare("DELETE FROM fallback_config").run();
     db.prepare("DELETE FROM models").run();
+    db.prepare("DELETE FROM api_keys").run();
     
     // Setup: 2 models (Pro and Flash)
     // Pro is higher priority (priority 1), Flash is lower (priority 2)

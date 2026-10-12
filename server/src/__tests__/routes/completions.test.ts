@@ -30,6 +30,7 @@ describe('Legacy Completions API (/v1/completions)', () => {
 
   beforeEach(() => {
     const db = initDb(':memory:');
+    db.prepare("DELETE FROM api_keys").run();
     const { encrypted, iv, authTag } = encrypt('mock-groq-key');
     db.prepare(
       "INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled) VALUES ('groq', 'Test Key', ?, ?, ?, 'healthy', 1)"
