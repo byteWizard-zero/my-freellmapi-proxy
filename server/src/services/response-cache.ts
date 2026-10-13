@@ -14,14 +14,88 @@ export class ResponseCache {
   private static memoryCache = new Map<string, { response: ChatCompletionResponse; expiresAt: number }>();
   private static readonly TTL_MS = 60 * 60 * 1000; // 1 hour TTL default
 
-  static computeHash(params: CacheKeyParams): string {
-    const serialized = JSON.stringify({
-      messages: params.messages.map(m => ({ role: m.role, content: m.content })),
-      model: params.model,
-      temperature: params.temperature,
-      top_p: params.top_p,
-      tools: params.tools,
+  /**
+   * Normalizes a text string by trimming whitespace, normalizing newline endings,
+   * collapsing redundant whitespace, and case-normalizing trivial messages.
+   */
+  static normalizeString(text: string, role: string = 'user'): string {
+    if (!text) return '';
+
+    // 1. Normalize line endings and trim leading/trailing whitespace
+    let normalized = text.replace(/\r\n/g, '\n').trim();
+
+    // 2. Collapse internal runs of spaces/tabs (preserve newlines)
+    normalized = normalized.replace(/[ \t]+/g, ' ');
+
+    // 3. Trim whitespace around newlines
+    normalized = normalized.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n');
+
+    const lowerRole = role.toLowerCase();
+
+    // 4. System prompt normalization: lowercasing trivial system variations
+    if (lowerRole === 'system') {
+      return normalized.toLowerCase();
+    }
+
+    // 5. Trivial message normalization:
+    // For short messages without code syntax or identifiers, normalize to lower case
+    const isCode = /```|[{};=<>]|\b(function|def|class|const|let|var|import|SELECT|git)\b/i.test(normalized);
+    if (!isCode && normalized.length < 120) {
+      return normalized.toLowerCase();
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Recursively normalizes message content.
+   */
+  static normalizeContent(content: any, role: string = 'user'): any {
+    if (typeof content === 'string') {
+      return this.normalizeString(content, role);
+    }
+    if (Array.isArray(content)) {
+      return content.map(part => {
+        if (part && typeof part === 'object') {
+          if (part.type === 'text' && typeof part.text === 'string') {
+            return { ...part, text: this.normalizeString(part.text, role) };
+          }
+        }
+        return part;
+      });
+    }
+    return content;
+  }
+
+  /**
+   * Normalizes cache key parameters to maximize cache hit rates across near-identical queries.
+   */
+  static normalizeParams(params: CacheKeyParams): any {
+    const messages = (params.messages || []).map(m => {
+      const role = (m.role || 'user').trim().toLowerCase();
+      return {
+        role,
+        content: this.normalizeContent(m.content, role),
+      };
     });
+
+    const model = params.model ? params.model.trim().toLowerCase() : 'auto';
+    const temperature = typeof params.temperature === 'number' ? Math.round(params.temperature * 1000) / 1000 : undefined;
+    const top_p = typeof params.top_p === 'number' ? Math.round(params.top_p * 1000) / 1000 : undefined;
+    const tools = params.tools && params.tools.length > 0 ? params.tools : undefined;
+
+    return {
+      messages,
+      model,
+      temperature,
+      top_p,
+      tools,
+    };
+  }
+
+  static computeHash(params: CacheKeyParams): string {
+    const normalized = this.normalizeParams(params);
+    const serialized = JSON.stringify(normalized);
     return crypto.createHash('sha256').update(serialized).digest('hex');
   }
 

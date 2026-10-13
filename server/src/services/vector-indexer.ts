@@ -2,12 +2,50 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { getDb } from '../db/index.js';
+import { EmbeddingRouter } from './embedding-router.js';
+
+// In-memory cache for parsed vector float arrays by chunk ID to avoid JSON.parse overhead
+const parsedVectorCache = new Map<string, number[]>();
+const MAX_VECTOR_CACHE_SIZE = 50000;
+
+/**
+ * Retrieves a parsed vector float array from cache or parses JSON if not cached.
+ */
+export function getCachedVector(chunkId: string, embeddingJson: string): number[] {
+  const cached = parsedVectorCache.get(chunkId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  let vec: number[];
+  try {
+    vec = JSON.parse(embeddingJson);
+    if (!Array.isArray(vec)) vec = [];
+  } catch {
+    vec = [];
+  }
+
+  if (parsedVectorCache.size >= MAX_VECTOR_CACHE_SIZE) {
+    const oldestKey = parsedVectorCache.keys().next().value;
+    if (oldestKey) parsedVectorCache.delete(oldestKey);
+  }
+
+  parsedVectorCache.set(chunkId, vec);
+  return vec;
+}
+
+/**
+ * Clears the in-memory parsed vector cache.
+ */
+export function clearVectorCache(): void {
+  parsedVectorCache.clear();
+}
 
 /**
  * Helper to calculate cosine similarity between two vectors
  */
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (vecA.length !== vecB.length) return 0;
+export function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length !== vecB.length || vecA.length === 0) return 0;
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
@@ -20,78 +58,220 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+export const DEFAULT_SPLITTER_SEPARATORS = [
+  '\n```\n',
+  '```\n',
+  '```',
+  '\n\n',
+  '\n',
+  '. ',
+  '? ',
+  '! ',
+  '; ',
+  '.',
+  '!',
+  '?',
+  ' ',
+  '',
+];
+
+export interface TextSplitterOptions {
+  chunkSize?: number;
+  chunkOverlap?: number;
+  separators?: string[];
+}
+
 /**
- * Split text into chunks
+ * Advanced RecursiveTextSplitter splitting hierarchically by code blocks,
+ * paragraphs, lines, and sentence terminators while preserving chunk size and overlap.
  */
-function chunkText(text: string, chunkSizeTokens: number = 800, overlapTokens: number = 200): string[] {
-  // Simple approximation: 1 token ~= 4 chars
-  const chunkSizeChars = chunkSizeTokens * 4;
-  const overlapChars = overlapTokens * 4;
-  
-  if (text.length <= chunkSizeChars) {
-    return [text];
+export function recursiveTextSplitter(
+  text: string,
+  options: TextSplitterOptions = {}
+): string[] {
+  const chunkSize = options.chunkSize ?? 3200; // ~800 tokens
+  const chunkOverlap = options.chunkOverlap ?? 800; // ~200 tokens
+  const separators = options.separators ?? DEFAULT_SPLITTER_SEPARATORS;
+
+  if (!text || text.trim().length === 0) {
+    return [];
   }
 
-  const chunks: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const end = Math.min(i + chunkSizeChars, text.length);
-    let chunk = text.slice(i, end);
-    
-    if (end < text.length) {
-      const lastNewline = chunk.lastIndexOf('\n');
-      const lastPeriod = chunk.lastIndexOf('.');
-      const breakPoint = Math.max(lastNewline, lastPeriod);
-      
-      if (breakPoint > chunk.length / 2) {
-        chunk = chunk.slice(0, breakPoint + 1);
-        i += breakPoint + 1;
-      } else {
-        i += chunkSizeChars;
-      }
-    } else {
-      i += chunkSizeChars;
+  return splitTextInternal(text, separators, chunkSize, chunkOverlap);
+}
+
+function splitTextInternal(
+  text: string,
+  separators: string[],
+  chunkSize: number,
+  chunkOverlap: number
+): string[] {
+  if (text.length <= chunkSize) {
+    const trimmed = text.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+
+  // Find the highest priority separator present in the text
+  let chosenSeparator = '';
+  let nextSeparators: string[] = [];
+
+  for (let i = 0; i < separators.length; i++) {
+    const s = separators[i];
+    if (s === '') {
+      chosenSeparator = '';
+      nextSeparators = [];
+      break;
     }
-    
-    chunks.push(chunk);
-    
-    if (i < text.length) {
-      i -= overlapChars;
-      if (i < 0) i = 0; 
+    if (text.includes(s)) {
+      chosenSeparator = s;
+      nextSeparators = separators.slice(i + 1);
+      break;
+    }
+  }
+
+  // Split text by the chosen separator
+  let rawSplits: string[];
+  if (chosenSeparator === '') {
+    rawSplits = Array.from(text);
+  } else {
+    rawSplits = text.split(chosenSeparator);
+  }
+
+  // Recursively split any chunk that is individually larger than chunkSize
+  const splits: string[] = [];
+  for (const piece of rawSplits) {
+    if (piece.length > chunkSize && nextSeparators.length > 0) {
+      const subSplits = splitTextInternal(piece, nextSeparators, chunkSize, chunkOverlap);
+      splits.push(...subSplits);
+    } else {
+      const trimmedPiece = piece.trim();
+      if (trimmedPiece.length > 0 || chosenSeparator === '') {
+        splits.push(trimmedPiece);
+      }
+    }
+  }
+
+  // Merge splits into chunks with chunkOverlap
+  const chunks: string[] = [];
+  let currentGroup: string[] = [];
+  let currentLength = 0;
+
+  const joinSep = (chosenSeparator === '' || chosenSeparator.includes('```'))
+    ? '\n'
+    : chosenSeparator;
+
+  for (const piece of splits) {
+    const pieceLen = piece.length;
+    const sepLen = currentGroup.length > 0 ? joinSep.length : 0;
+
+    if (currentLength + sepLen + pieceLen > chunkSize && currentGroup.length > 0) {
+      const merged = currentGroup.join(joinSep).trim();
+      if (merged.length > 0) {
+        chunks.push(merged);
+      }
+
+      // Preserve overlap: keep pieces from the tail of currentGroup
+      while (currentGroup.length > 0) {
+        const groupTotal = currentGroup.join(joinSep).length;
+        if (groupTotal <= chunkOverlap) {
+          break;
+        }
+        currentGroup.shift();
+      }
+
+      // Ensure that remaining overlap + next piece doesn't exceed chunkSize
+      while (currentGroup.length > 0) {
+        const groupTotal = currentGroup.join(joinSep).length;
+        if (groupTotal + joinSep.length + pieceLen <= chunkSize) {
+          break;
+        }
+        currentGroup.shift();
+      }
+
+      currentLength = currentGroup.length > 0 ? currentGroup.join(joinSep).length : 0;
+    }
+
+    currentGroup.push(piece);
+    currentLength = currentGroup.join(joinSep).length;
+  }
+
+  if (currentGroup.length > 0) {
+    const merged = currentGroup.join(joinSep).trim();
+    if (merged.length > 0) {
+      chunks.push(merged);
     }
   }
 
   return chunks;
 }
 
-/**
- * Fetch embeddings from local API
- */
-async function getEmbeddings(input: string | string[]): Promise<number[][]> {
-  const port = process.env.PORT || 3001;
-  const url = `http://localhost:${port}/v1/embeddings`;
-  
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input,
-        model: 'text-embedding-3-small'
-      })
+export class RecursiveTextSplitterClass {
+  chunkSize: number;
+  chunkOverlap: number;
+  separators: string[];
+
+  constructor(options: TextSplitterOptions = {}) {
+    this.chunkSize = options.chunkSize ?? 3200;
+    this.chunkOverlap = options.chunkOverlap ?? 800;
+    this.separators = options.separators ?? DEFAULT_SPLITTER_SEPARATORS;
+  }
+
+  splitText(text: string): string[] {
+    return recursiveTextSplitter(text, {
+      chunkSize: this.chunkSize,
+      chunkOverlap: this.chunkOverlap,
+      separators: this.separators,
     });
+  }
+}
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get embeddings: ${response.status} ${errorText}`);
+/**
+ * Universal RecursiveTextSplitter function / class callable as a function or instantiated with options.
+ */
+export function RecursiveTextSplitter(
+  textOrOptions?: string | TextSplitterOptions,
+  optionsOrChunkSize?: TextSplitterOptions | number,
+  chunkOverlap?: number,
+  separators?: string[]
+): any {
+  if (typeof textOrOptions === 'string') {
+    let opts: TextSplitterOptions = {};
+    if (typeof optionsOrChunkSize === 'number') {
+      opts.chunkSize = optionsOrChunkSize;
+      if (typeof chunkOverlap === 'number') opts.chunkOverlap = chunkOverlap;
+      if (Array.isArray(separators)) opts.separators = separators;
+    } else if (typeof optionsOrChunkSize === 'object' && optionsOrChunkSize !== null) {
+      opts = optionsOrChunkSize;
     }
+    return recursiveTextSplitter(textOrOptions, opts);
+  }
+  return new RecursiveTextSplitterClass(textOrOptions);
+}
 
-    const data = (await response.json()) as any;
-    return data.data.map((item: any) => item.embedding);
+(RecursiveTextSplitter as any).split = (text: string, opts?: TextSplitterOptions) => recursiveTextSplitter(text, opts);
+
+/**
+ * Backwards-compatible chunkText helper
+ */
+export function chunkText(text: string, chunkSizeTokens: number = 800, overlapTokens: number = 200): string[] {
+  return recursiveTextSplitter(text, {
+    chunkSize: chunkSizeTokens * 4,
+    chunkOverlap: overlapTokens * 4,
+  });
+}
+
+/**
+ * Fetch embeddings directly in-process via EmbeddingRouter
+ */
+export async function getEmbeddings(input: string | string[]): Promise<number[][]> {
+  try {
+    const response = await EmbeddingRouter.generateEmbeddings({
+      input,
+      model: 'auto',
+    });
+    return response.data.map(item => item.embedding);
   } catch (error) {
-    console.error('Error fetching embeddings:', error);
+    console.error('Error fetching embeddings via EmbeddingRouter:', error);
     throw error;
   }
 }
@@ -164,6 +344,10 @@ export async function indexFile(vectorStoreId: string, fileId: string): Promise<
           JSON.stringify(embeddings[i]),
           tokenCount
         );
+        // Pre-populate parsed vector cache
+        if (parsedVectorCache.size < MAX_VECTOR_CACHE_SIZE) {
+          parsedVectorCache.set(chunkId, embeddings[i]);
+        }
       }
 
       db.prepare(`
@@ -213,15 +397,12 @@ export async function searchVectorStore(vectorStoreId: string, query: string, to
     const queryVec = queryEmbeddings[0];
 
     const db = getDb();
-    const chunks = db.prepare('SELECT content, embedding FROM vector_chunks WHERE vector_store_id = ?').all(vectorStoreId) as any[];
+    const chunks = db.prepare('SELECT id, content, embedding FROM vector_chunks WHERE vector_store_id = ?').all(vectorStoreId) as any[];
 
     const results = chunks.map(chunk => {
-      let vec: number[];
-      try {
-        vec = JSON.parse(chunk.embedding);
-      } catch {
-        vec = [];
-      }
+      const vec = chunk.id ? getCachedVector(chunk.id, chunk.embedding) : (() => {
+        try { return JSON.parse(chunk.embedding); } catch { return []; }
+      })();
       return {
         content: chunk.content,
         score: cosineSimilarity(queryVec, vec)
