@@ -274,6 +274,37 @@ describe('OpenAICompatProvider', () => {
     expect(chunks[0].choices[0].delta.content).toBe('Thinking...');
     expect(chunks[1].choices[0].delta.content).toBe('Answer!');
   });
+
+  it('aborts upstream streamChatCompletion immediately when AbortSignal fires', async () => {
+    const controller = new AbortController();
+    let readerCancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        const encoder = new TextEncoder();
+        ctrl.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"part1"}}]}\n\n'));
+      },
+      cancel() {
+        readerCancelled = true;
+      },
+    });
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      body: stream,
+    } as any);
+
+    const gen = provider.streamChatCompletion('k', [{ role: 'user', content: 'hi' }], 'm', { signal: controller.signal });
+    const firstChunk = (await gen.next()).value;
+    expect(firstChunk.choices[0].delta.content).toBe('part1');
+
+    // Trigger abort
+    controller.abort();
+
+    // Next chunk should terminate generator cleanly
+    const second = await gen.next();
+    expect(second.done).toBe(true);
+    expect(readerCancelled).toBe(true);
+  });
 });
 
 describe('OpenAICompatProvider - platform instances', () => {

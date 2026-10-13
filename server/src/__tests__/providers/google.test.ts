@@ -332,4 +332,41 @@ describe('GoogleProvider', () => {
     expect(toolDeltas[0].function.arguments).toBe('{"city":"Karachi"}');
     expect(toolDeltas[0].id).toMatch(/^call_[a-f0-9]{16}$/);
   });
+
+  it('aborts Google streamChatCompletion immediately when AbortSignal fires', async () => {
+    const controller = new AbortController();
+    let readerCancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        const encoder = new TextEncoder();
+        ctrl.enqueue(encoder.encode('data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}\n\n'));
+      },
+      cancel() {
+        readerCancelled = true;
+      },
+    });
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      body: stream,
+    } as any);
+
+    const gen = provider.streamChatCompletion(
+      'test-key',
+      [{ role: 'user', content: 'Hi' }],
+      'gemini-2.5-pro',
+      { signal: controller.signal },
+    );
+
+    const firstChunk = (await gen.next()).value;
+    expect(firstChunk.choices[0].delta.content).toBe('Hello');
+
+    // Abort
+    controller.abort();
+
+    // Next chunk should cleanly finish
+    const second = await gen.next();
+    expect(second.done).toBe(true);
+    expect(readerCancelled).toBe(true);
+  });
 });

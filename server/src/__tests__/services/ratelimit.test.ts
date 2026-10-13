@@ -133,6 +133,39 @@ describe('Rate Limiter', () => {
         else delete process.env.COOLDOWN_MS;
       }
     });
+
+    it('should parse retry-after durations and avoid false 1-hour cooldowns', () => {
+      // 1. Error with explicit seconds: "Please try again in 5.5s"
+      setCooldown('groq', 'llama-70b', testId, undefined, 'Rate limit reached. Please try again in 5s');
+      expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(true);
+
+      // Fast forward past 5 seconds (5001ms)
+      const origDateNow = Date.now;
+      const start = Date.now();
+      try {
+        global.Date.now = () => start + 6000;
+        // Key should have gracefully recovered!
+        expect(isOnCooldown('groq', 'llama-70b', testId)).toBe(false);
+      } finally {
+        global.Date.now = origDateNow;
+      }
+    });
+
+    it('should not set a false 1-hour cooldown on non-rate-limit 5xx/timeout errors', () => {
+      const nonRLErrors = [
+        'Google API error 503: Service Unavailable',
+        'Provider error 500: Internal Server Error',
+        'ETIMEDOUT: Connection timed out',
+        'Gateway Timeout 504',
+      ];
+
+      for (let i = 0; i < nonRLErrors.length; i++) {
+        const id = testId + 100 + i;
+        setCooldown('google', 'gemini-1.5-flash', id, undefined, nonRLErrors[i]);
+        // Should not put key on false cooldown because it's a 5xx/timeout error handled by circuit breaker
+        expect(isOnCooldown('google', 'gemini-1.5-flash', id)).toBe(false);
+      }
+    });
   });
 });
 

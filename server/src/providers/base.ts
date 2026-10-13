@@ -27,6 +27,7 @@ export interface CompletionOptions {
   logprobs?: boolean | null;
   top_logprobs?: number | null;
   seed?: number | null;
+  signal?: AbortSignal;
 }
 
 
@@ -46,6 +47,7 @@ export abstract class BaseProvider {
     messages: ChatMessage[],
     modelId: string,
     options?: CompletionOptions,
+    signal?: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk>;
 
   abstract validateKey(apiKey: string): Promise<{ isValid: boolean; error?: string; isAuthError?: boolean }>;
@@ -98,13 +100,33 @@ export abstract class BaseProvider {
     url: string,
     init: RequestInit,
     timeoutMs = 15000,
+    signal?: AbortSignal,
   ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const externalSignal = signal ?? init.signal;
+    let onAbort: (() => void) | undefined;
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timeout);
+        controller.abort(externalSignal.reason);
+      } else {
+        onAbort = () => {
+          clearTimeout(timeout);
+          controller.abort(externalSignal.reason);
+        };
+        externalSignal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
+
     try {
       return await fetch(url, { ...init, signal: controller.signal });
     } finally {
       clearTimeout(timeout);
+      if (externalSignal && onAbort) {
+        externalSignal.removeEventListener('abort', onAbort);
+      }
     }
   }
 

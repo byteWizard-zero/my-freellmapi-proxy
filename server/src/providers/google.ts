@@ -294,7 +294,8 @@ export class GoogleProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+      signal: options?.signal,
+    }, 15000, options?.signal);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -349,7 +350,9 @@ export class GoogleProvider extends BaseProvider {
     messages: ChatMessage[],
     modelId: string,
     options?: CompletionOptions,
+    signal?: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk> {
+    const abortSignal = signal ?? options?.signal;
     const { contents, systemInstruction } = toGeminiContents(messages);
 
     const body: Record<string, unknown> = {
@@ -374,7 +377,8 @@ export class GoogleProvider extends BaseProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+      signal: abortSignal,
+    }, 15000, abortSignal);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -392,20 +396,96 @@ export class GoogleProvider extends BaseProvider {
 
     const seenToolCallKeys = new Set<string>();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        if (abortSignal?.aborted) {
+          reader.cancel().catch(() => {});
+          return;
+        }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
+        let readResult: { done: boolean; value?: any };
+        try {
+          readResult = await reader.read();
+        } catch (readErr: any) {
+          if (abortSignal?.aborted) {
+            reader.cancel().catch(() => {});
+            return;
+          }
+          throw readErr;
+        }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const raw = trimmed.slice(6);
-        if (raw === '[DONE]') {
-          if (!emittedFinish) {
+        const { done, value } = readResult;
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (abortSignal?.aborted) {
+            reader.cancel().catch(() => {});
+            return;
+          }
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const raw = trimmed.slice(6);
+          if (raw === '[DONE]') {
+            if (!emittedFinish) {
+              emittedFinish = true;
+              yield {
+                id,
+                object: 'chat.completion.chunk',
+                created: Math.floor(Date.now() / 1000),
+                model: modelId,
+                choices: [{
+                  index: 0,
+                  delta: {},
+                  finish_reason: sawToolCalls ? 'tool_calls' : 'stop',
+                }],
+              };
+            }
+            return;
+          }
+
+          // Skip malformed SSE frames instead of aborting the whole stream.
+          // Matches the defensive parse in openai-compat / cohere / cloudflare:
+          // a single corrupt chunk shouldn't take down the rest of the response.
+          let chunk: GeminiResponse;
+          try {
+            chunk = JSON.parse(raw) as GeminiResponse;
+          } catch {
+            continue;
+          }
+          const candidate = chunk.candidates?.[0];
+          const parts = candidate?.content?.parts ?? [];
+
+          const text = extractText(parts);
+          const toolCalls = extractToolCalls(parts).filter(call => {
+            const key = `${call.id}:${call.function.name}:${call.function.arguments}`;
+            if (seenToolCallKeys.has(key)) return false;
+            seenToolCallKeys.add(key);
+            return true;
+          });
+
+          if ((text && text.length > 0) || toolCalls.length > 0) {
+            sawToolCalls = sawToolCalls || toolCalls.length > 0;
+            yield {
+              id,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: modelId,
+              choices: [{
+                index: 0,
+                delta: {
+                  ...(text ? { content: text } : {}),
+                  ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+                },
+                finish_reason: null,
+              }],
+            };
+          }
+
+          if (candidate?.finishReason && !emittedFinish) {
             emittedFinish = true;
             yield {
               id,
@@ -415,81 +495,29 @@ export class GoogleProvider extends BaseProvider {
               choices: [{
                 index: 0,
                 delta: {},
-                finish_reason: sawToolCalls ? 'tool_calls' : 'stop',
+                finish_reason: sawToolCalls ? 'tool_calls' : toGeminiFinishReason(candidate.finishReason),
               }],
             };
+            return;
           }
-          return;
-        }
-
-        // Skip malformed SSE frames instead of aborting the whole stream.
-        // Matches the defensive parse in openai-compat / cohere / cloudflare:
-        // a single corrupt chunk shouldn't take down the rest of the response.
-        let chunk: GeminiResponse;
-        try {
-          chunk = JSON.parse(raw) as GeminiResponse;
-        } catch {
-          continue;
-        }
-        const candidate = chunk.candidates?.[0];
-        const parts = candidate?.content?.parts ?? [];
-
-        const text = extractText(parts);
-        const toolCalls = extractToolCalls(parts).filter(call => {
-          const key = `${call.id}:${call.function.name}:${call.function.arguments}`;
-          if (seenToolCallKeys.has(key)) return false;
-          seenToolCallKeys.add(key);
-          return true;
-        });
-
-        if ((text && text.length > 0) || toolCalls.length > 0) {
-          sawToolCalls = sawToolCalls || toolCalls.length > 0;
-          yield {
-            id,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model: modelId,
-            choices: [{
-              index: 0,
-              delta: {
-                ...(text ? { content: text } : {}),
-                ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-              },
-              finish_reason: null,
-            }],
-          };
-        }
-
-        if (candidate?.finishReason && !emittedFinish) {
-          emittedFinish = true;
-          yield {
-            id,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model: modelId,
-            choices: [{
-              index: 0,
-              delta: {},
-              finish_reason: sawToolCalls ? 'tool_calls' : toGeminiFinishReason(candidate.finishReason),
-            }],
-          };
-          return;
         }
       }
-    }
 
-    if (!emittedFinish) {
-      yield {
-        id,
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: modelId,
-        choices: [{
-          index: 0,
-          delta: {},
-          finish_reason: sawToolCalls ? 'tool_calls' : 'stop',
-        }],
-      };
+      if (!emittedFinish) {
+        yield {
+          id,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: modelId,
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: sawToolCalls ? 'tool_calls' : 'stop',
+          }],
+        };
+      }
+    } finally {
+      reader.releaseLock?.();
     }
   }
 

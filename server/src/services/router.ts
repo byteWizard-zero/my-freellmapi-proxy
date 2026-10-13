@@ -69,15 +69,115 @@ export function recordRateLimitHit(modelDbId: number) {
   }
 }
 
+// ── Circuit Breaker: track consecutive 5xx/timeout failures per platform ──
+interface CircuitBreakerState {
+  consecutiveFailures: number;
+  trippedUntil: number | null;
+}
+
+const circuitBreakers = new Map<string, CircuitBreakerState>();
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_TRIP_DURATION_MS = 2 * 60 * 1000; // 2 minutes
+
+export function is5xxOrTimeoutError(err: any): boolean {
+  if (!err) return false;
+  const status = typeof err.status === 'number' ? err.status : (typeof err.statusCode === 'number' ? err.statusCode : undefined);
+  if (status && status >= 500 && status < 600) return true;
+
+  const msg = String(err.message || err || '').toLowerCase();
+  const code = String(err.code || '').toLowerCase();
+  const name = String(err.name || '').toLowerCase();
+
+  // 5xx status codes
+  if (/\b5\d{2}\b/.test(msg)) return true;
+
+  // Timeout indicators
+  if (name.includes('timeout') || code.includes('timeout') || code === 'etimedout' || code === 'esockettimedout') return true;
+  if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout')) return true;
+  if (msg.includes('gateway timeout') || msg.includes('bad gateway') || msg.includes('service unavailable')) return true;
+  if (msg.includes('internal server error') || msg.includes('server error')) return true;
+  if (code === 'econnreset' || code === 'econnrefused' || msg.includes('econnreset') || msg.includes('econnrefused')) return true;
+
+  return false;
+}
+
+export function isCircuitOpen(platform: string): boolean {
+  const cb = circuitBreakers.get(platform);
+  if (!cb || cb.trippedUntil === null) return false;
+  if (Date.now() >= cb.trippedUntil) {
+    // Cooldown expired: allow trial attempt (half-open)
+    cb.trippedUntil = null;
+    return false;
+  }
+  return true;
+}
+
+export function recordPlatformFailure(platform: string, error?: any): void {
+  if (error && !is5xxOrTimeoutError(error)) {
+    return;
+  }
+  let cb = circuitBreakers.get(platform);
+  if (!cb) {
+    cb = { consecutiveFailures: 0, trippedUntil: null };
+    circuitBreakers.set(platform, cb);
+  }
+  cb.consecutiveFailures++;
+  if (cb.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+    cb.trippedUntil = Date.now() + CIRCUIT_TRIP_DURATION_MS;
+    console.warn(`[Router] Circuit breaker tripped for platform '${platform}' after ${cb.consecutiveFailures} consecutive 5xx/timeout failures. Tripped for 2 minutes.`);
+  }
+}
+
+export function recordPlatformSuccess(platform: string): void {
+  const cb = circuitBreakers.get(platform);
+  if (cb) {
+    cb.consecutiveFailures = 0;
+    cb.trippedUntil = null;
+  }
+}
+
+export function resetCircuitBreakers(): void {
+  circuitBreakers.clear();
+}
+
+export function getCircuitBreakerStatus(): Record<string, { consecutiveFailures: number; isOpen: boolean; trippedUntil: number | null }> {
+  const now = Date.now();
+  const status: Record<string, { consecutiveFailures: number; isOpen: boolean; trippedUntil: number | null }> = {};
+  for (const [platform, cb] of circuitBreakers) {
+    const isOpen = cb.trippedUntil !== null && cb.trippedUntil > now;
+    status[platform] = {
+      consecutiveFailures: cb.consecutiveFailures,
+      isOpen,
+      trippedUntil: isOpen ? cb.trippedUntil : null,
+    };
+  }
+  return status;
+}
+
 /**
- * Record a success for a model — reduces its penalty so it rises back up.
+ * Record a success for a model — reduces its penalty so it rises back up,
+ * and clears any consecutive failure counter on the platform's circuit breaker.
  */
-export function recordSuccess(modelDbId: number) {
+export function recordSuccess(modelDbId: number, platform?: string) {
   const existing = rateLimitPenalties.get(modelDbId);
   if (existing) {
     existing.penalty = Math.max(0, existing.penalty - 1);
     if (existing.penalty === 0) {
       rateLimitPenalties.delete(modelDbId);
+    }
+  }
+
+  if (platform) {
+    recordPlatformSuccess(platform);
+  } else {
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT platform FROM models WHERE id = ?').get(modelDbId) as { platform: string } | undefined;
+      if (row?.platform) {
+        recordPlatformSuccess(row.platform);
+      }
+    } catch {
+      // db might not be initialized in isolated unit tests
     }
   }
 }
@@ -175,6 +275,11 @@ export function routeRequest(
     // Get model details
     const model = db.prepare('SELECT * FROM models WHERE id = ? AND enabled = 1').get(entry.model_db_id) as ModelRow | undefined;
     if (!model) continue;
+
+    // Circuit Breaker: skip platform if its circuit is open (unless forced)
+    if (!forceModel && isCircuitOpen(model.platform)) {
+      continue;
+    }
 
     // If request contains an image, restrict to vision-capable models
     if (hasImage) {

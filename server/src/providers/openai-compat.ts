@@ -53,6 +53,7 @@ export class OpenAICompatProvider extends BaseProvider {
     options?: CompletionOptions,
   ): Promise<ChatCompletionResponse> {
     const samplingPinned = this.isSamplingPinned(modelId);
+    const abortSignal = options?.signal;
     const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -78,7 +79,8 @@ export class OpenAICompatProvider extends BaseProvider {
         top_logprobs: options?.top_logprobs,
         seed: options?.seed,
       }),
-    }, this.timeoutMs);
+      signal: abortSignal,
+    }, this.timeoutMs, abortSignal);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -96,8 +98,10 @@ export class OpenAICompatProvider extends BaseProvider {
     messages: ChatMessage[],
     modelId: string,
     options?: CompletionOptions,
+    signal?: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk> {
     const samplingPinned = this.isSamplingPinned(modelId);
+    const abortSignal = signal ?? options?.signal;
     const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -124,7 +128,8 @@ export class OpenAICompatProvider extends BaseProvider {
         seed: options?.seed,
         stream: true,
       }),
-    }, this.timeoutMs);
+      signal: abortSignal,
+    }, this.timeoutMs, abortSignal);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -137,42 +142,66 @@ export class OpenAICompatProvider extends BaseProvider {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        if (abortSignal?.aborted) {
+          reader.cancel().catch(() => {});
+          return;
+        }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') return;
+        let readResult: { done: boolean; value?: any };
         try {
-          const chunk = JSON.parse(data) as ChatCompletionChunk;
-          if (chunk.choices) {
-            for (const choice of chunk.choices) {
-              const delta = choice.delta as any;
-              if (delta) {
-                const hasToolCalls = Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0;
-                if (!hasToolCalls && (delta.content === '' || delta.content == null)) {
-                  const fold = (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
-                    ? delta.reasoning_content
-                    : (typeof delta.reasoning === 'string' && delta.reasoning.length > 0 ? delta.reasoning : null);
-                  if (fold !== null) {
-                    delta.content = fold;
+          readResult = await reader.read();
+        } catch (readErr: any) {
+          if (abortSignal?.aborted) {
+            reader.cancel().catch(() => {});
+            return;
+          }
+          throw readErr;
+        }
+
+        const { done, value } = readResult;
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (abortSignal?.aborted) {
+            reader.cancel().catch(() => {});
+            return;
+          }
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') return;
+          try {
+            const chunk = JSON.parse(data) as ChatCompletionChunk;
+            if (chunk.choices) {
+              for (const choice of chunk.choices) {
+                const delta = choice.delta as any;
+                if (delta) {
+                  const hasToolCalls = Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0;
+                  if (!hasToolCalls && (delta.content === '' || delta.content == null)) {
+                    const fold = (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
+                      ? delta.reasoning_content
+                      : (typeof delta.reasoning === 'string' && delta.reasoning.length > 0 ? delta.reasoning : null);
+                    if (fold !== null) {
+                      delta.content = fold;
+                    }
                   }
                 }
               }
             }
+            yield chunk;
+          } catch {
+            // Skip malformed chunks
           }
-          yield chunk;
-        } catch {
-          // Skip malformed chunks
         }
       }
+    } finally {
+      reader.releaseLock?.();
     }
   }
 

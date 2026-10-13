@@ -3,7 +3,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { ChatMessage } from '@freellmapi/shared/types.js';
-import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
+import { routeRequest, recordRateLimitHit, recordSuccess, recordPlatformFailure, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown } from '../services/ratelimit.js';
 import { getDb, getUnifiedApiKey, validateClientApiKey, recordClientKeyUsage } from '../db/index.js';
 import { WebSearchService } from '../services/websearch.js';
@@ -284,6 +284,20 @@ function isInvalidKeyError(err: any): boolean {
 }
 
 proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
+  const abortController = new AbortController();
+  const onAbort = () => {
+    if (!res.writableFinished) {
+      abortController.abort();
+    }
+  };
+  res.on('close', onAbort);
+  req.socket?.on('close', onAbort);
+  req.on('close', () => {
+    if (req.socket?.destroyed && !res.writableFinished) {
+      abortController.abort();
+    }
+  });
+
   const start = Date.now();
   const disableFallback = req.headers['x-disable-fallback'] === 'true';
 
@@ -536,6 +550,10 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   const hasImage = messages.some(m => Array.isArray(m.content) && m.content.some(part => part.type === 'image_url'));
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (abortController.signal.aborted) {
+      return;
+    }
+
     let route: RouteResult;
     try {
       route = routeRequest(estimatedTotal, skipKeys.size > 0 ? skipKeys : undefined, preferredModel, forceModel, hasImage);
@@ -569,10 +587,14 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           const gen = route.provider.streamChatCompletion(
             route.apiKey, messages, route.modelId,
             { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
-              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
+              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed, signal: abortController.signal },
+            abortController.signal,
           );
 
           for await (const chunk of gen) {
+            if (abortController.signal.aborted) {
+              break;
+            }
             if (!streamStarted) {
               res.setHeader('Content-Type', 'text/event-stream');
               res.setHeader('Cache-Control', 'no-cache');
@@ -614,7 +636,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
 
           recordTokens(route.platform, route.modelId, route.keyId, estimatedInputTokens + totalOutputTokens);
           if (clientKeyId) recordClientKeyUsage(clientKeyId, estimatedInputTokens + totalOutputTokens);
-          recordSuccess(route.modelDbId);
+          recordSuccess(route.modelDbId, route.platform);
           setStickyModel(messages, route.modelDbId);
           try {
             const db = getDb();
@@ -625,6 +647,10 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           logRequest(route.platform, route.modelId, 'success', estimatedInputTokens, totalOutputTokens, Date.now() - start, null);
           return;
         } catch (streamErr: any) {
+          if (abortController.signal.aborted) {
+            logRequest(route.platform, route.modelId, 'aborted', estimatedInputTokens, totalOutputTokens, Date.now() - start, 'Client disconnected');
+            return;
+          }
           if (streamStarted) {
             // Mid-stream error — finish the SSE response cleanly instead of leaving
             // the client hanging or letting Express's default handler take over.
@@ -650,7 +676,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
               route.provider.chatCompletion(
                 route.apiKey, messages, route.modelId,
                 { temperature: effTemp, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
-                  frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
+                  frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed, signal: abortController.signal },
               )
             );
           }
@@ -677,14 +703,14 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
           result = await route.provider.chatCompletion(
             route.apiKey, messages, route.modelId,
             { temperature, max_tokens, top_p, tools, tool_choice, parallel_tool_calls, web_search: isWebSearchRequested, response_format,
-              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed },
+              frequency_penalty, presence_penalty, stop, logit_bias, logprobs, top_logprobs, seed, signal: abortController.signal },
           );
         }
 
         const totalTokens = result.usage?.total_tokens ?? 0;
         recordTokens(route.platform, route.modelId, route.keyId, totalTokens);
         if (clientKeyId) recordClientKeyUsage(clientKeyId, totalTokens);
-        recordSuccess(route.modelDbId);
+        recordSuccess(route.modelDbId, route.platform);
         setStickyModel(messages, route.modelDbId);
         try {
           const db = getDb();
@@ -740,7 +766,14 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       }
     } catch (err: any) {
       const latency = Date.now() - start;
+      if (abortController.signal.aborted) {
+        logRequest(route.platform, route.modelId, 'aborted', estimatedInputTokens, 0, latency, 'Client disconnected');
+        return;
+      }
       logRequest(route.platform, route.modelId, 'error', estimatedInputTokens, 0, latency, err.message);
+
+      // Record platform failure in Circuit Breaker (tracks consecutive 5xx/timeout failures)
+      recordPlatformFailure(route.platform, err);
 
       const isModelNotFound = isModelNotFoundError(err);
       const isInvalidKey = isInvalidKeyError(err);

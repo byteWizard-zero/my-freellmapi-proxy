@@ -127,19 +127,71 @@ export function getCooldownDurationMs(): number {
   return 3_600_000; // default: 1 hour (60 minutes)
 }
 
+export function parseRetryAfterMs(errorMessage: string): number | null {
+  if (!errorMessage) return null;
+  const msg = errorMessage.toLowerCase();
+
+  // Match e.g. "retry after 12s", "retry-after: 12", "retry after 12 seconds", "try again in 12s", "try again in 12.5 seconds"
+  const secMatch = msg.match(/(?:retry[\s_-]?after|try again in|wait)\s*(?:is|:)?\s*(\d+(?:\.\d+)?)\s*(?:s|sec|second|seconds)?\b/);
+  if (secMatch) {
+    const sec = parseFloat(secMatch[1]);
+    if (!isNaN(sec) && sec > 0 && sec < 86400) {
+      return Math.ceil(sec * 1000);
+    }
+  }
+
+  // Match e.g. "try again in 5m", "try again in 5 minutes"
+  const minMatch = msg.match(/(?:retry[\s_-]?after|try again in|wait)\s*(?:is|:)?\s*(\d+(?:\.\d+)?)\s*(?:m|min|minute|minutes)\b/);
+  if (minMatch) {
+    const min = parseFloat(minMatch[1]);
+    if (!isNaN(min) && min > 0 && min < 1440) {
+      return Math.ceil(min * 60 * 1000);
+    }
+  }
+
+  return null;
+}
+
+export function isRateLimitErrorMessage(msg: string): boolean {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return lower.includes('429')
+    || lower.includes('rate limit')
+    || lower.includes('too many requests')
+    || lower.includes('quota')
+    || lower.includes('resource_exhausted')
+    || lower.includes('exceeded your current quota');
+}
+
 export function setCooldown(
   platform: string,
   modelId: string,
   keyId: number,
-  durationMs = getCooldownDurationMs(),
+  durationMs?: number,
   errorMessage = '',
 ) {
+  if (!keyId || isNaN(keyId)) return;
+
+  let effectiveDuration = durationMs;
+  if (effectiveDuration === undefined) {
+    const parsedRetry = parseRetryAfterMs(errorMessage);
+    if (parsedRetry !== null) {
+      effectiveDuration = parsedRetry;
+    } else if (errorMessage && !isRateLimitErrorMessage(errorMessage)) {
+      // Do not trigger long rate limit cooldown on non-rate-limit errors (e.g. 5xx, timeouts)
+      // Platform-level failures are handled by the Circuit Breaker instead.
+      return;
+    } else {
+      effectiveDuration = getCooldownDurationMs();
+    }
+  }
+
   cooldowns.set(keyId, {
     keyId,
     platform,
     modelId,
     errorMessage: errorMessage || 'Transient rate limit or provider error',
-    expiry: Date.now() + durationMs,
+    expiry: Date.now() + effectiveDuration,
   });
 }
 
@@ -155,7 +207,7 @@ export function clearAllCooldowns(): void {
 export function isOnCooldown(platform: string, modelId: string, keyId: number): boolean {
   const info = cooldowns.get(keyId);
   if (!info) return false;
-  if (Date.now() > info.expiry) {
+  if (Date.now() >= info.expiry) {
     cooldowns.delete(keyId);
     return false;
   }

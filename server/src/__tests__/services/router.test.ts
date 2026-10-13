@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { initDb, getDb } from '../../db/index.js';
 import { encrypt } from '../../lib/crypto.js';
-import { routeRequest, recordRateLimitHit, getAllPenalties } from '../../services/router.js';
+import {
+  routeRequest,
+  recordRateLimitHit,
+  getAllPenalties,
+  isCircuitOpen,
+  recordPlatformFailure,
+  recordPlatformSuccess,
+  resetCircuitBreakers,
+  getCircuitBreakerStatus,
+} from '../../services/router.js';
 
 describe('Router', () => {
   beforeAll(() => {
@@ -10,6 +19,7 @@ describe('Router', () => {
   });
 
   beforeEach(() => {
+    resetCircuitBreakers();
     const db = getDb();
     db.prepare('DELETE FROM api_keys').run();
     // Reset fallback order to intelligence ranking
@@ -122,5 +132,85 @@ describe('Router', () => {
     expect(penalties.find(p => p.modelDbId === 100)?.penalty).toBe(1);
 
     global.Date.now = originalDateNow;
+  });
+
+  describe('Circuit Breaker', () => {
+    it('should trip after 3 consecutive 5xx/timeout failures and skip platform', () => {
+      const db = getDb();
+
+      // Configure keys for Google and Groq
+      const googleKey = encrypt('test-google-key');
+      db.prepare(`
+        INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run('google', 'test', googleKey.encrypted, googleKey.iv, googleKey.authTag, 'healthy', 1);
+
+      const groqKey = encrypt('test-groq-key');
+      db.prepare(`
+        INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run('groq', 'test', groqKey.encrypted, groqKey.iv, groqKey.authTag, 'healthy', 1);
+
+      // Normally Google wins rank 1
+      expect(routeRequest().platform).toBe('google');
+
+      // Failure 1: 503 error
+      recordPlatformFailure('google', new Error('Google API error 503: Service Unavailable'));
+      expect(isCircuitOpen('google')).toBe(false);
+
+      // Failure 2: Timeout error
+      recordPlatformFailure('google', new Error('Connection timed out ETIMEDOUT'));
+      expect(isCircuitOpen('google')).toBe(false);
+
+      // Failure 3: 500 Internal Server Error -> trips breaker!
+      recordPlatformFailure('google', new Error('Google API error 500: Internal Server Error'));
+      expect(isCircuitOpen('google')).toBe(true);
+
+      const status = getCircuitBreakerStatus();
+      expect(status['google'].consecutiveFailures).toBe(3);
+      expect(status['google'].isOpen).toBe(true);
+
+      // Route request should immediately bypass Google and route to Groq!
+      const result = routeRequest();
+      expect(result.platform).toBe('groq');
+
+      // Success on Groq clears or maintains Groq's breaker
+      recordPlatformSuccess('groq');
+      expect(isCircuitOpen('groq')).toBe(false);
+
+      // Verify Google breaker resets after 2 minutes
+      const origDateNow = Date.now;
+      const start = Date.now();
+      try {
+        global.Date.now = () => start + (2 * 60 * 1000 + 100);
+        // After 2 minutes, breaker should allow trial requests (not open)
+        expect(isCircuitOpen('google')).toBe(false);
+        // Route should now consider Google again
+        expect(routeRequest().platform).toBe('google');
+      } finally {
+        global.Date.now = origDateNow;
+      }
+    });
+
+    it('should not trip on non-5xx errors like 429 rate limit or 401 auth error', () => {
+      recordPlatformFailure('google', new Error('Google API error 429: Resource exhausted'));
+      recordPlatformFailure('google', new Error('Google API error 429: Rate limit exceeded'));
+      recordPlatformFailure('google', new Error('Google API error 401: Unauthorized'));
+      recordPlatformFailure('google', new Error('Google API error 404: Not found'));
+
+      expect(isCircuitOpen('google')).toBe(false);
+      expect(getCircuitBreakerStatus()['google']?.consecutiveFailures ?? 0).toBe(0);
+    });
+
+    it('should reset consecutive failures on platform success', () => {
+      recordPlatformFailure('google', new Error('503 Service Unavailable'));
+      recordPlatformFailure('google', new Error('503 Service Unavailable'));
+      expect(getCircuitBreakerStatus()['google'].consecutiveFailures).toBe(2);
+
+      // Platform succeeds
+      recordPlatformSuccess('google');
+      expect(getCircuitBreakerStatus()['google'].consecutiveFailures).toBe(0);
+      expect(isCircuitOpen('google')).toBe(false);
+    });
   });
 });
