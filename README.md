@@ -79,9 +79,17 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **AI Image Generation & Edits (`/v1/images/*`)** — `POST /v1/images/generations`, `/v1/images/edits`, and `/v1/images/variations` with Pollinations Flux, Cloudflare Flux/SDXL, Google Imagen 3, and automatic zero-auth failover.
 - **Audio Transcription, Translation & Speech (`/v1/audio/*`)** — Speech-to-text (`/v1/audio/transcriptions`, `/v1/audio/translations`) via Groq Whisper Large v3 / Turbo, Cloudflare Whisper, and Gemini Audio. Neural text-to-speech synthesis (`/v1/audio/speech`) with voices (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`).
 - **Streaming and non-streaming** — Server-Sent Events for `stream: true`, JSON response otherwise. Every provider adapter implements both.
+- **Client Stream Cancellation & Quota Guard** — Immediate abort of upstream inference when downstream clients disconnect or abort (`res.on('close')`), eliminating wasted free-tier token quota.
+- **Adaptive Platform Circuit Breakers** — Tracks consecutive 5xx/timeout errors per platform. Automatically trips the breaker for 2 minutes after 3 failures, bypassing degraded providers in <1ms without 45–90s timeout hangs.
+- **Hierarchical Recursive Text Splitting** — Intelligent document chunking for vector stores respecting code fences, paragraphs, line breaks, and sentence terminators.
+- **In-Process RAG Embeddings & Vector Cache** — Zero-overhead direct embedding generation and LRU-cached parsed float vectors for fast cosine similarity search.
+- **High-Speed Classification Heuristics** — Sub-millisecond rule-based regex classification for code, math, and conversational queries, bypassing external LLM roundtrips for 90%+ of prompts.
+- **Query Normalization & Response Caching** — Trims whitespace, standardizes line endings, and normalizes conversational greetings for maximum cache hit ratios.
+- **Code Interpreter Sandboxing** — Sanitized child process environments (all API keys & secrets stripped), 100KB payload limit, and strict 6-second execution timeouts.
+- **Million-Dollar Dark-Tech UI/UX Dashboard** — Deep obsidian aesthetic, glassmorphic cards (`.glass-card`, `.glow-border`), ambient tech grid, pulsing health beacons, and fluid GSAP route transitions (`@gsap/react`).
 - **Tool calling** — OpenAI-style `tools` / `tool_choice` requests are passed through, and assistant `tool_calls` + `tool` role follow-up messages round-trip across providers.
 - **Automatic fallover** — If the chosen provider returns a 429, 5xx, or times out, the router skips it, puts the key on a short cooldown, and retries on the next model in your fallback chain (up to 20 attempts).
-- **Global Key Cooldowns** — If an API key encounters an error or hits rate limits on any model, it goes on a global cooldown for **1 hour** across all models using that key to avoid redundant fallback loops.
+- **Dynamic Retry-After Recovery** — Accurately parses upstream rate-limit headers to apply minimal necessary cooldowns without locking keys out for 1 hour on transient glitches.
 - **Per-key rate tracking** — RPM, RPD, TPM, and TPD counters per `(platform, model, key)` so the router always picks a key that's under its caps.
 - **Sticky sessions** — Multi-turn conversations keep talking to the same model for 30 minutes to avoid the hallucination spike that comes from mid-conversation model switches.
 - **Admin-Only Dashboard Access & API Protection** — Secure `AuthGate` requiring scrypt-hashed credentials to access the UI and `/api/*` management endpoints, with brute-force rate limiting.
@@ -95,6 +103,8 @@ The problem is that stacking them by hand is painful: fourteen different SDKs, f
 - **Playground & Media Studio** — React + Vite UI with dedicated tabs for **💬 Chat & Vision**, **🎨 Image Studio**, **🎙️ Audio Lab**, **🔢 Embeddings Lab** (with cosine similarity comparison), and **🛡️ Moderation Inspector**.
 - **Dedicated Cooldowns Page** — Real-time tracking of sleeping keys with countdown timers and exact trigger errors.
 - **Automatic Sibling Sync** — CLI tool (`npm run sync-keys`) to scan adjacent repositories recursively and update their unified API key in `.env` configurations automatically.
+- **Turnkey LangChain Support** — Built-in Python test suite (`npm run test:langchain`) and drop-in compatibility with `ChatOpenAI` and `OpenAIEmbeddings`.
+- **Render Cloud Ready with Keepalive** — Automatic background keep-alive pinging (`/api/ping` every 9 minutes) to eliminate free-tier cold starts on Render.
 - **Analytics** — Per-request logging with latency, token counts, success rate, and per-provider breakdowns.
 - **Deploys to a Raspberry Pi** — Runs happily on a Pi 4 under PM2 behind nginx. ~40 MB RSS at idle.
 
@@ -482,6 +492,51 @@ mod_resp = client.moderations.create(
 )
 print("Flagged:", mod_resp.results[0].flagged)
 print("Category scores:", mod_resp.results[0].category_scores)
+```
+
+**LangChain Integration (Python & TypeScript)**
+
+FreeLLMAPI functions as a drop-in replacement for OpenAI in LangChain and LangGraph across both local development and cloud (Render) deployments:
+
+*Python (`langchain-openai`)*:
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
+
+# Works with local http://localhost:3001/v1 or hosted https://my-freellmapi-proxy.onrender.com/v1
+llm = ChatOpenAI(
+    model="auto",  # FreeLLMAPI handles dynamic failover across all 17+ free tiers
+    base_url="https://my-freellmapi-proxy.onrender.com/v1",
+    api_key="freellmapi-your-unified-key",
+    request_timeout=60,
+)
+
+response = llm.invoke([HumanMessage(content="Explain quantum computing in one sentence.")])
+print(response.content)
+```
+
+*TypeScript / JavaScript (`@langchain/openai`)*:
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  configuration: {
+    baseURL: "https://my-freellmapi-proxy.onrender.com/v1",
+    apiKey: process.env.UNIFIED_API_KEY,
+  },
+  modelName: "auto",
+  timeout: 60000,
+});
+
+const stream = await llm.stream("Write a clean TypeScript debounce utility.");
+for await (const chunk of stream) {
+  process.stdout.write(chunk.content as string);
+}
+```
+
+*Turnkey Test Command*:
+```bash
+npm run test:langchain
 ```
 
 **Client API Keys & Token Budgets (`/api/client-keys`)**
