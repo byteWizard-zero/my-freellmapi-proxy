@@ -671,61 +671,67 @@ export default function PlaygroundPage() {
       <PageHeader
         title="Playground"
         description="Test LLM text chat, multimodal vision, AI image generation, vector embeddings, moderation, and audio."
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium badge-luminous">
+            <Sparkles className="size-3 text-emerald-400" />
+            <span>Multimodal Suite</span>
+          </span>
+        }
         actions={
-          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto flex-nowrap">
+          <div className="flex items-center gap-1 p-1 bg-muted/60 border border-border/70 rounded-xl overflow-x-auto flex-nowrap shadow-xs">
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 activeTab === 'chat'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <MessageSquare className="size-3.5" />
+              <MessageSquare className="size-3.5 text-emerald-400" />
               <span>Chat & Vision</span>
             </button>
             <button
               onClick={() => setActiveTab('images')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 activeTab === 'images'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <ImageIcon className="size-3.5 text-pink-500" />
+              <ImageIcon className="size-3.5 text-pink-400" />
               <span>Image Studio</span>
             </button>
             <button
               onClick={() => setActiveTab('audio')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 activeTab === 'audio'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <Volume2 className="size-3.5 text-blue-500" />
+              <Volume2 className="size-3.5 text-cyan-400" />
               <span>Audio Lab</span>
             </button>
             <button
               onClick={() => setActiveTab('embeddings')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 activeTab === 'embeddings'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <Binary className="size-3.5 text-emerald-500" />
+              <Binary className="size-3.5 text-emerald-400" />
               <span>Embeddings</span>
             </button>
             <button
               onClick={() => setActiveTab('moderations')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 activeTab === 'moderations'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <ShieldAlert className="size-3.5 text-amber-500" />
+              <ShieldAlert className="size-3.5 text-amber-400" />
               <span>Moderation</span>
             </button>
           </div>
@@ -734,9 +740,9 @@ export default function PlaygroundPage() {
 
       {/* ======================= TAB 1: CHAT & VISION ======================= */}
       {activeTab === 'chat' && (
-        <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col rounded-xl border border-border/70 glass-card overflow-hidden min-h-0 shadow-sm">
           {/* Top Controls Toolbar */}
-          <div className="flex items-center justify-between gap-3 p-3 border-b bg-muted/20 flex-wrap">
+          <div className="flex items-center justify-between gap-3 p-3 border-b border-border/60 bg-muted/30 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
               <Select value={selectedModel} onValueChange={(v) => setSelectedModel(v ?? 'auto')}>
                 <SelectTrigger className="w-full sm:w-[240px] h-9">
@@ -952,7 +958,7 @@ export default function PlaygroundPage() {
       {activeTab === 'images' && (
         <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-6">
           {/* Image Generation Config Card */}
-          <div className="p-5 rounded-xl border bg-card space-y-4 shadow-sm">
+          <div className="p-5 rounded-xl border border-border/70 glass-card space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -1224,7 +1230,7 @@ export default function PlaygroundPage() {
 
           {/* TTS Panel */}
           {audioMode === 'tts' && (
-            <div className="p-5 rounded-xl border bg-card space-y-4 shadow-sm">
+            <div className="p-5 rounded-xl border border-border/70 glass-card space-y-4 shadow-sm">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Volume2 className="size-4 text-blue-500" />
@@ -1319,7 +1325,7 @@ export default function PlaygroundPage() {
 
           {/* STT Panel */}
           {audioMode === 'stt' && (
-            <div className="p-5 rounded-xl border bg-card space-y-4 shadow-sm">
+            <div className="p-5 rounded-xl border border-border/70 glass-card space-y-4 shadow-sm">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <Mic className="size-4 text-emerald-500" />
@@ -1487,7 +1493,7 @@ export default function PlaygroundPage() {
 
       {/* ======================= TAB 4: EMBEDDINGS LAB ======================= */}
       {activeTab === 'embeddings' && (
-        <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto">
+        <div className="flex-1 flex flex-col rounded-xl border border-border/70 glass-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-3">
             <div>
               <h2 className="text-sm font-semibold flex items-center gap-2">
@@ -1633,7 +1639,7 @@ export default function PlaygroundPage() {
 
       {/* ======================= TAB 5: MODERATION INSPECTOR ======================= */}
       {activeTab === 'moderations' && (
-        <div className="flex-1 flex flex-col rounded-lg border bg-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto">
+        <div className="flex-1 flex flex-col rounded-xl border border-border/70 glass-card overflow-hidden min-h-0 p-6 space-y-6 overflow-y-auto shadow-sm">
           <div className="flex items-center justify-between border-b pb-4 flex-wrap gap-3">
             <div>
               <h2 className="text-sm font-semibold flex items-center gap-2">

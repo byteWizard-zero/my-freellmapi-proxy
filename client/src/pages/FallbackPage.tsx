@@ -21,6 +21,7 @@ import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { PageHeader } from '@/components/page-header'
+import { Brain, Gauge, Coins, Sparkles } from 'lucide-react'
 
 interface FallbackEntry {
   modelDbId: number
@@ -88,15 +89,18 @@ function TokenUsageBar({ data }: { data: TokenUsageData }) {
   }))
 
   return (
-    <section className="rounded-lg border bg-card p-5" aria-label="Monthly token budget pool">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-sm font-medium">Monthly free token pool</h2>
-        <span className="text-xs font-mono text-muted-foreground">
+    <section className="glass-card glow-border rounded-xl border border-border/70 p-5 hover:border-emerald-500/40 transition-all duration-300 shadow-xs" aria-label="Monthly token budget pool">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Coins className="size-4 text-emerald-400" />
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Monthly Free Token Pool</h2>
+        </div>
+        <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 border border-border/60 text-muted-foreground tabular-nums">
           {formatTokens(remainingTotal)} / {formatTokens(totalBudget)} remaining ({100 - usagePercent}%)
         </span>
       </div>
 
-      <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
+      <div className="h-2.5 w-full rounded-full bg-muted/80 overflow-hidden flex shadow-inner">
         {modelsWithWidth.map((m, i) => (
           <div
             key={i}
@@ -308,10 +312,16 @@ export default function FallbackPage() {
   const hasChanges = localEntries !== null
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Fallback chain"
-        description="Drag to reorder. Requests try models top-to-bottom until one succeeds."
+        title="Dynamic Fallback Chain"
+        description="Smart automatic failover routing. Requests attempt highest priority models first, instantly routing around rate limits and provider outages."
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium badge-luminous">
+            <Sparkles className="size-3 text-emerald-400" />
+            <span>Smart Failover</span>
+          </span>
+        }
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <Button
@@ -319,24 +329,30 @@ export default function FallbackPage() {
               size="sm"
               onClick={() => sortMutation.mutate('intelligence')}
               disabled={sortMutation.isPending}
+              className="gap-1.5 text-xs border-border/80 hover:border-emerald-500/30"
             >
-              Sort by intelligence
+              <Brain className="size-3.5 text-emerald-400" />
+              <span>Sort by intelligence</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => sortMutation.mutate('speed')}
               disabled={sortMutation.isPending}
+              className="gap-1.5 text-xs border-border/80 hover:border-cyan-500/30"
             >
-              Sort by speed
+              <Gauge className="size-3.5 text-cyan-400" />
+              <span>Sort by speed</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => sortMutation.mutate('budget')}
               disabled={sortMutation.isPending}
+              className="gap-1.5 text-xs border-border/80 hover:border-amber-500/30"
             >
-              Sort by budget
+              <Coins className="size-3.5 text-amber-400" />
+              <span>Sort by budget</span>
             </Button>
           </div>
         }
@@ -350,7 +366,7 @@ export default function FallbackPage() {
         {/* Filter Controls Row */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Modality Filter Pills */}
-          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border rounded-lg overflow-x-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 border border-border/70 rounded-xl overflow-x-auto shadow-xs">
             {[
               { id: 'all', label: 'All Models' },
               { id: 'chat', label: '💬 Chat / LLM' },
@@ -364,10 +380,10 @@ export default function FallbackPage() {
               <button
                 key={tab.id}
                 onClick={() => setModalityFilter(tab.id as any)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                   modalityFilter === tab.id
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-background text-foreground shadow-xs font-semibold border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
                 }`}
               >
                 {tab.label}
@@ -375,7 +391,7 @@ export default function FallbackPage() {
             ))}
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer select-none border rounded-lg px-3 py-1.5 bg-muted/30 whitespace-nowrap self-start sm:self-auto">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer select-none border border-border/60 rounded-xl px-3 py-2 bg-muted/30 whitespace-nowrap self-start sm:self-auto transition-colors">
             <input
               type="checkbox"
               checked={showUnconfigured}
@@ -389,14 +405,14 @@ export default function FallbackPage() {
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : displayEntries.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
+          <div className="rounded-xl border border-dashed border-border/70 p-8 text-center glass-card">
             <p className="text-sm text-muted-foreground">
               No models found for this filter. Add API keys on the <a href="/keys" className="underline text-foreground">Keys page</a> first.
             </p>
           </div>
         ) : (
           <>
-            <div className="rounded-lg border divide-y overflow-hidden">
+            <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden glass-card shadow-xs">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -419,13 +435,19 @@ export default function FallbackPage() {
             </div>
 
             {hasChanges && (
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setLocalEntries(null)}>
-                  Discard
-                </Button>
-                <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
-                  {saveMutation.isPending ? 'Saving…' : 'Save order'}
-                </Button>
+              <div className="sticky bottom-4 z-20 flex items-center justify-between p-3.5 rounded-xl border border-emerald-500/30 bg-background/90 backdrop-blur-xl shadow-lg animate-in slide-in-from-bottom-2 duration-200">
+                <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
+                  <Sparkles className="size-3.5" />
+                  <span>Unsaved priority chain modifications</span>
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setLocalEntries(null)} className="h-8 text-xs">
+                    Discard
+                  </Button>
+                  <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs">
+                    {saveMutation.isPending ? 'Saving…' : 'Save Order'}
+                  </Button>
+                </div>
               </div>
             )}
 

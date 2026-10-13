@@ -86,37 +86,37 @@
 }
 
 .dark {
-    --background: oklch(0.17 0.024 250);       /* Slate 900 */
-    --foreground: oklch(0.985 0.005 240);       /* Slate 50 */
-    --card: oklch(0.21 0.024 250);             /* Slate 850 */
+    --background: oklch(0.125 0.02 260);       /* Deep Obsidian Slate */
+    --foreground: oklch(0.985 0.005 240);       /* Crisp Pure White */
+    --card: oklch(0.158 0.022 260);            /* Polished Slate Layer */
     --card-foreground: oklch(0.985 0.005 240);
-    --popover: oklch(0.21 0.024 250);
+    --popover: oklch(0.158 0.022 260);
     --popover-foreground: oklch(0.985 0.005 240);
-    --primary: oklch(0.72 0.22 142);           /* Glowing Emerald */
-    --primary-foreground: oklch(0.17 0.024 250);
-    --secondary: oklch(0.25 0.024 250);        /* Slate 800 */
+    --primary: oklch(0.76 0.19 155);           /* Luminous Emerald */
+    --primary-foreground: oklch(0.12 0.02 260);
+    --secondary: oklch(0.21 0.024 260);        /* Deep Slate 800 */
     --secondary-foreground: oklch(0.985 0.005 240);
-    --muted: oklch(0.21 0.024 250);
-    --muted-foreground: oklch(0.65 0.015 250); /* Slate 400 */
-    --accent: oklch(0.22 0.035 260);
-    --accent-foreground: oklch(0.985 0.005 260);
+    --muted: oklch(0.19 0.02 260);
+    --muted-foreground: oklch(0.66 0.016 250); /* Sleek muted slate */
+    --accent: oklch(0.23 0.035 220);           /* Cyan-tinted Slate */
+    --accent-foreground: oklch(0.92 0.08 180);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 8%);
+    --border: oklch(1 0 0 / 9%);               /* Razor-thin 1px border */
     --input: oklch(1 0 0 / 12%);
-    --ring: oklch(0.72 0.22 142);
-    --chart-1: oklch(0.92 0 0);
-    --chart-2: oklch(0.78 0 0);
-    --chart-3: oklch(0.6 0 0);
-    --chart-4: oklch(0.45 0 0);
-    --chart-5: oklch(0.32 0 0);
-    --sidebar: oklch(0.175 0 0);
+    --ring: oklch(0.76 0.19 155);
+    --chart-1: oklch(0.76 0.19 155);          /* Emerald */
+    --chart-2: oklch(0.75 0.14 210);          /* Cyan */
+    --chart-3: oklch(0.72 0.16 280);          /* Violet */
+    --chart-4: oklch(0.82 0.15 85);           /* Amber */
+    --chart-5: oklch(0.68 0.18 340);          /* Rose */
+    --sidebar: oklch(0.13 0.02 260);
     --sidebar-foreground: oklch(0.98 0 0);
-    --sidebar-primary: oklch(0.93 0 0);
-    --sidebar-primary-foreground: oklch(0.18 0 0);
-    --sidebar-accent: oklch(0.24 0 0);
+    --sidebar-primary: oklch(0.76 0.19 155);
+    --sidebar-primary-foreground: oklch(0.12 0 0);
+    --sidebar-accent: oklch(0.21 0.024 260);
     --sidebar-accent-foreground: oklch(0.98 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.6 0 0);
+    --sidebar-ring: oklch(0.76 0.19 155);
 }
 
 @layer base {
@@ -131,7 +131,7 @@
         -moz-osx-font-smoothing: grayscale;
     }
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background text-foreground min-h-screen selection:bg-emerald-500/20 selection:text-emerald-300;
         font-feature-settings: 'ss01', 'cv11', 'tnum';
     }
     code, pre, kbd, samp {
@@ -164,21 +164,101 @@
     background: var(--muted-foreground);
 }
 
-/* Glassmorphism panel helper */
+/* Tech grid & ambient illumination patterns */
+.bg-tech-grid {
+    background-image: 
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(16, 185, 129, 0.07), transparent 70%),
+        linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
+}
+
+.dark .bg-tech-grid {
+    background-image: 
+        radial-gradient(ellipse 80% 45% at 50% -12%, rgba(16, 185, 129, 0.12), transparent 70%),
+        radial-gradient(ellipse 50% 35% at 90% 10%, rgba(6, 182, 212, 0.07), transparent 60%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+}
+
+/* Glassmorphism card & panel helpers */
+.glass-card {
+    background: oklch(1 0 0 / 80%);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid oklch(var(--border) / 60%);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+.dark .glass-card {
+    background: oklch(0.158 0.022 260 / 68%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid oklch(1 0 0 / 8%);
+    box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.45);
+}
+
 .glass-panel {
-    background: rgba(var(--card), 0.7);
-    backdrop-filter: blur(12px);
+    background: oklch(var(--card) / 75%);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--border);
 }
 
-/* Premium card hover animations */
+/* Glowing border highlights with smooth transition */
+.glow-border {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glow-border:hover {
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 0 25px -4px rgba(16, 185, 129, 0.15), 0 8px 24px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* Status indicator beacons */
+.status-beacon-emerald {
+    position: relative;
+    display: inline-flex;
+}
+.status-beacon-emerald::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 9999px;
+    background-color: #10b981;
+    opacity: 0.4;
+    animation: beacon-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes beacon-ping {
+    75%, 100% {
+        transform: scale(2.4);
+        opacity: 0;
+    }
+}
+
+/* Luminous pills */
+.badge-luminous {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 182, 212, 0.08));
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #059669;
+}
+.dark .badge-luminous {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(6, 182, 212, 0.12));
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #34d399;
+    box-shadow: 0 0 16px -2px rgba(16, 185, 129, 0.2);
+}
+
+/* Radial hover glow for cards */
 .hover-card-trigger {
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .hover-card-trigger:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    border-color: oklch(var(--ring) / 20%);
+    box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(16, 185, 129, 0.25);
 }
 
 /* Spin slow animation for clock icon */
@@ -194,7 +274,7 @@
     }
 }
 
-/* Responsive visibility helpers (bulletproof across all browsers & screen zooms) */
+/* Responsive visibility helpers */
 @media (max-width: 767px) {
     .desktop-only {
         display: none !important;

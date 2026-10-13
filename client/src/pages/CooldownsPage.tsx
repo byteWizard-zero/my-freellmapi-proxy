@@ -68,7 +68,7 @@ function CooldownCard({
   }, [secondsLeft, item.expiry, onExpire])
 
   return (
-    <div className="rounded-lg border border-amber-500/20 bg-card p-5 flex flex-col gap-4 shadow-sm transition-all hover:border-amber-500/30">
+    <div className="glass-card rounded-xl border border-amber-500/30 p-5 flex flex-col gap-4 shadow-sm transition-all hover:border-amber-500/50">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -155,8 +155,14 @@ export default function CooldownsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Sleeping Keys"
+        title="Sleeping Keys & Cooldowns"
         description={`API credentials temporarily suspended due to rate limits or transient errors. Cooldown duration: ${durationText} (configurable via COOLDOWN_MINUTES).`}
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium badge-luminous">
+            <Clock className="size-3 text-amber-400" />
+            <span>Auto-Recovery Engine</span>
+          </span>
+        }
         actions={
           <div className="flex items-center gap-2">
             {cooldowns.length > 0 && (

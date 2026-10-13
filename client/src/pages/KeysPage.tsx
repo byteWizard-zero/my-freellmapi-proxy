@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
-import { AlertCircle, Sparkles, ChevronDown, Loader2, AlertTriangle, Shield, Key, Plus, Check, Copy } from 'lucide-react'
+import { AlertCircle, Sparkles, ChevronDown, Loader2, AlertTriangle, Shield, Key, Plus, Check, Copy, RefreshCw, Zap } from 'lucide-react'
 import type { ApiKey, Platform, ClientApiKey, ClientApiKeyCreatedResponse } from '../../../shared/types'
 
 const PLATFORMS: { value: Platform; label: string }[] = [
@@ -121,12 +121,18 @@ function UnifiedKeySection() {
   }
 
   return (
-    <section className="rounded-lg border bg-card p-5">
+    <section className="glass-card glow-border rounded-xl p-5 border border-border/70 hover:border-emerald-500/40 transition-all duration-300">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
-          <h2 className="text-sm font-medium">Your unified API key</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Use this as your OpenAI <code className="font-mono">api_key</code>; it authenticates requests to this proxy.
+          <div className="flex items-center gap-2">
+            <Key className="size-4 text-emerald-400" />
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">Master Unified API Key</h2>
+            <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+              Gateway Proxy
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Authenticate directly from LangChain, OpenAI SDKs, LiteLLM, or Curl using this master token.
           </p>
         </div>
         <Button
@@ -134,28 +140,30 @@ function UnifiedKeySection() {
           size="sm"
           onClick={() => setShowConfirm(true)}
           disabled={regenerate.isPending}
+          className="text-xs hover:bg-muted/60"
         >
           Regenerate
         </Button>
       </div>
 
       <div className="flex items-center gap-2">
-        <code className="flex-1 font-mono text-xs bg-muted px-3 py-2 rounded-md select-all truncate tabular-nums">
+        <code className="flex-1 font-mono text-xs bg-muted/60 border border-border/60 px-3.5 py-2.5 rounded-lg select-all truncate tabular-nums text-foreground/90">
           {showKey ? apiKey : masked}
         </code>
-        <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)}>
+        <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)} className="text-xs">
           {showKey ? 'Hide' : 'Show'}
         </Button>
-        <Button variant="outline" size="sm" onClick={copy}>
+        <Button variant="outline" size="sm" onClick={copy} className="text-xs gap-1.5 min-w-[70px]">
+          {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
 
-      <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        <span className="text-muted-foreground">Base URL</span>
-        <code className="font-mono">{baseUrl}</code>
-        <span className="text-muted-foreground">Endpoint</span>
-        <code className="font-mono">/v1/chat/completions</code>
+      <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs pt-3 border-t border-border/50">
+        <span className="text-muted-foreground font-medium">Base URL:</span>
+        <code className="font-mono text-foreground/90">{baseUrl}</code>
+        <span className="text-muted-foreground font-medium">Endpoint:</span>
+        <code className="font-mono text-emerald-400/90">/v1/chat/completions</code>
       </div>
 
       {showConfirm && (
@@ -263,14 +271,17 @@ function ClientKeysSection() {
   }
 
   return (
-    <section className="rounded-lg border bg-card p-5 space-y-4">
+    <section className="glass-card rounded-xl p-5 border border-border/70 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <Shield className="size-4 text-primary" />
-            <h2 className="text-sm font-medium">Multi-tenant Client Keys & Token Budgets</h2>
+            <Shield className="size-4 text-cyan-400" />
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">Multi-tenant Client Keys & Token Budgets</h2>
+            <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/25">
+              Isolated Scopes
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-1">
             Issue isolated API keys for downstream apps, agents, or tenants with per-key RPM limits and monthly token quotas.
           </p>
         </div>
@@ -460,7 +471,7 @@ function parseMarkdown(text: string) {
     }
 
     const parts = []
-    let currentText = bulletText
+    const currentText = bulletText
     const boldRegex = /\*\*(.*?)\*\*/g
     let match
     let lastIndex = 0
@@ -592,18 +603,38 @@ export default function KeysPage() {
   })).filter(p => p.keys.length > 0)
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Keys"
-        description="Provider credentials and the unified API key your apps connect with."
+        title="Provider & Unified Keys"
+        description="Provider credentials and the unified API gateway key your apps connect with."
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium badge-luminous">
+            <Shield className="size-3 text-emerald-400" />
+            <span>AES-256 Encrypted</span>
+          </span>
+        }
         actions={
           keys.length > 0 && (
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => checkAll.mutate('sequential')} disabled={checkAll.isPending}>
-                {checkAll.isPending && checkAll.variables === 'sequential' ? 'Checking…' : 'Check one-by-one'}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => checkAll.mutate('sequential')}
+                disabled={checkAll.isPending}
+                className="gap-1.5 text-xs border-border/80 hover:border-emerald-500/30"
+              >
+                <RefreshCw className={`size-3.5 ${checkAll.isPending && checkAll.variables === 'sequential' ? 'animate-spin text-emerald-400' : ''}`} />
+                {checkAll.isPending && checkAll.variables === 'sequential' ? 'Checking…' : 'Check sequential'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => checkAll.mutate('parallel')} disabled={checkAll.isPending}>
-                {checkAll.isPending && checkAll.variables === 'parallel' ? 'Checking…' : 'Check simultaneously'}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => checkAll.mutate('parallel')}
+                disabled={checkAll.isPending}
+                className="gap-1.5 text-xs border-border/80 hover:border-cyan-500/30"
+              >
+                <Zap className={`size-3.5 ${checkAll.isPending && checkAll.variables === 'parallel' ? 'animate-pulse text-cyan-400' : ''}`} />
+                {checkAll.isPending && checkAll.variables === 'parallel' ? 'Checking…' : 'Check parallel'}
               </Button>
             </div>
           )
@@ -615,8 +646,11 @@ export default function KeysPage() {
         <ClientKeysSection />
 
         <section>
-          <h2 className="text-sm font-medium mb-3">Add a provider key</h2>
-          <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border p-4 bg-card">
+          <div className="flex items-center gap-2 mb-3">
+            <Plus className="size-4 text-emerald-400" />
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">Add a provider key</h2>
+          </div>
+          <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-xl border border-border/70 p-4 glass-card shadow-sm">
             <div className="space-y-1.5">
               <Label className="text-xs">Platform</Label>
               <Select value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
@@ -709,7 +743,7 @@ export default function KeysPage() {
                       {group.keys.length} key{group.keys.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  <div className="rounded-lg border divide-y bg-card overflow-hidden">
+                  <div className="rounded-xl border border-border/70 divide-y divide-border/60 glass-card overflow-hidden shadow-xs">
                     {group.keys.map(k => {
                       const h = healthKeyMap.get(k.id)
                       const status = h?.status ?? k.status
@@ -719,17 +753,21 @@ export default function KeysPage() {
                       const isExpanded = expandedKeyId === k.id && isError
 
                       return (
-                        <div key={k.id} className="border-b last:border-b-0">
+                        <div key={k.id} className="border-b last:border-b-0 border-border/60">
                           <div
                             onClick={() => {
                               if (isError) handleToggleExpand(k.id)
                             }}
                             className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-                              isError ? 'cursor-pointer hover:bg-muted/40' : 'hover:bg-muted/10'
+                              isError ? 'cursor-pointer hover:bg-muted/40' : 'hover:bg-muted/15'
                             }`}
                           >
-                            <span className={`size-1.5 rounded-full flex-shrink-0 ${statusDot[status] ?? statusDot.unknown}`} />
-                            <code className="text-xs font-mono flex-shrink-0">{k.maskedKey}</code>
+                            <span className={`size-2 rounded-full flex-shrink-0 ${
+                              status === 'healthy'
+                                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.6)]'
+                                : statusDot[status] ?? statusDot.unknown
+                            }`} />
+                            <code className="text-xs font-mono flex-shrink-0 text-foreground/90">{k.maskedKey}</code>
                             {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
                             
                             <span className="text-xs text-muted-foreground flex items-center gap-1">

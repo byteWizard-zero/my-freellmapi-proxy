@@ -92,44 +92,50 @@ export default function ClientKeysPage() {
       <PageHeader
         title="Project API Keys"
         description="Issue dedicated API keys for neighbor apps and agents with per-project RPM rate limits and monthly token budgets."
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium badge-luminous">
+            <KeyRound className="size-3 text-emerald-400" />
+            <span>Scoped Access</span>
+          </span>
+        }
       />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4 flex items-center justify-between">
+        <div className="glass-card glow-border rounded-xl border border-border/70 p-4 flex items-center justify-between hover:border-emerald-500/40 transition-all duration-300 shadow-xs">
           <div>
             <p className="text-xs text-muted-foreground font-medium">Configured Projects</p>
-            <p className="text-2xl font-bold mt-1">{keys.length}</p>
+            <p className="text-2xl font-bold mt-1 text-foreground tabular-nums">{keys.length}</p>
           </div>
-          <div className="p-2.5 rounded-full bg-primary/10 text-primary">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20">
             <KeyRound className="size-5" />
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-4 flex items-center justify-between">
+        <div className="glass-card glow-border rounded-xl border border-border/70 p-4 flex items-center justify-between hover:border-emerald-500/40 transition-all duration-300 shadow-xs">
           <div>
             <p className="text-xs text-muted-foreground font-medium">Active Keys</p>
-            <p className="text-2xl font-bold mt-1">{activeCount} / {keys.length}</p>
+            <p className="text-2xl font-bold mt-1 text-emerald-400 tabular-nums">{activeCount} / {keys.length}</p>
           </div>
-          <div className="p-2.5 rounded-full bg-emerald-500/10 text-emerald-500">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <Power className="size-5" />
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-4 flex items-center justify-between">
+        <div className="glass-card glow-border rounded-xl border border-border/70 p-4 flex items-center justify-between hover:border-cyan-500/40 transition-all duration-300 shadow-xs">
           <div>
             <p className="text-xs text-muted-foreground font-medium">Tokens Consumed This Month</p>
-            <p className="text-2xl font-bold mt-1">{totalTokensUsed.toLocaleString()}</p>
+            <p className="text-2xl font-bold mt-1 text-cyan-400 tabular-nums">{totalTokensUsed.toLocaleString()}</p>
           </div>
-          <div className="p-2.5 rounded-full bg-blue-500/10 text-blue-500">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
             <BarChart3 className="size-5" />
           </div>
         </div>
       </div>
 
       {/* Create New Key Section */}
-      <section className="rounded-lg border bg-card p-5 space-y-4">
+      <section className="glass-card rounded-xl border border-border/70 p-5 space-y-4 shadow-sm">
         <div className="flex items-center gap-2">
-          <Plus className="size-4 text-primary" />
-          <h2 className="text-sm font-semibold">Issue New Project Token</h2>
+          <Plus className="size-4 text-emerald-400" />
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Issue New Project Token</h2>
         </div>
 
         <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-muted/20 border p-3.5 rounded-lg">

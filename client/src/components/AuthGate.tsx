@@ -249,8 +249,8 @@ function LoginForm({
   const showSpecificError = !!error && (!isSessionExpired || error.toLowerCase().includes('failed') || error.toLowerCase().includes('invalid') || error.toLowerCase().includes('not registered'))
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-background bg-tech-grid flex items-center justify-center p-4">
+      <div className="w-full max-w-md glass-card rounded-2xl border border-border/80 p-6 sm:p-8 shadow-2xl">
         {isSessionExpired ? (
           <div className="text-center mb-6">
             <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center mx-auto mb-3 text-amber-500 dark:text-amber-400 shadow-xs">
@@ -431,8 +431,8 @@ function ForgotPasswordForm({
 
   if (phase === 1) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="w-full max-w-sm">
+      <div className="min-h-screen bg-background bg-tech-grid flex items-center justify-center p-4">
+        <div className="w-full max-w-md glass-card rounded-2xl border border-border/80 p-6 sm:p-8 shadow-2xl">
           <div className="text-center mb-8">
             <h1 className="text-xl font-semibold text-foreground">Forgot Password</h1>
             <p className="text-sm text-muted-foreground mt-1">Enter your email to receive a reset code</p>
@@ -485,8 +485,8 @@ function ForgotPasswordForm({
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-background bg-tech-grid flex items-center justify-center p-4">
+      <div className="w-full max-w-md glass-card rounded-2xl border border-border/80 p-6 sm:p-8 shadow-2xl">
         <div className="text-center mb-6">
           <h1 className="text-xl font-semibold text-foreground">Reset Password</h1>
           <p className="text-sm text-muted-foreground mt-1">Check your server logs (e.g. Render Dashboard Logs) for the 6-character code.</p>
@@ -632,8 +632,8 @@ function SetupForm({
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-background bg-tech-grid flex items-center justify-center p-4">
+      <div className="w-full max-w-md glass-card rounded-2xl border border-border/80 p-6 sm:p-8 shadow-2xl">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-2">
             <span className="inline-block size-2 rounded-full bg-foreground" />
